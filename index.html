@@ -140,7 +140,7 @@ const CFG={
   LOG_YIELD:50,                 // 原木1個 → 木材50個(1秒に1個)
   COST:{sawmill:10,processor:10,storage:5,conveyor:1},   // 設置コスト(木材)
   INV_SLOTS:10,
-  STORAGE_SLOTS:2,MACHINE_SLOTS:1,   // MACHINE_SLOTS: 製作系機械の内部ストレージ(入力/出力それぞれ)は必ず1マス。今後追加する機械も同様
+  STORAGE_SLOTS:2,MACHINE_SLOTS:1,MACHINE_OUT_CAP:10,   // MACHINE_OUT_CAP: 生産品の保持上限(個)。材料の保持上限はレシピの必要数。   // MACHINE_SLOTS: 製作系機械の内部ストレージ(入力/出力それぞれ)は必ず1マス。今後追加する機械も同様
   TICK_MS:1000
 };
 /* ================= データ定義(素材・機械・レシピ・段階) =================
@@ -188,7 +188,7 @@ const ITEMS={
   castle_gate:{name:'城門',stack:20,stage:6,color:'#6b4f3a'},
   tower_unit:{name:'塔ユニット',stack:20,stage:6,color:'#a8977f'},
   roof_unit:{name:'屋根ユニット',stack:20,stage:7,color:'#7b4a3a'},
-  keep_unit:{name:'天守ユニット',stack:5,stage:7,color:'#c2b49b'},
+  keep_unit:{name:'天守ユニット',stack:10,stage:7,color:'#c2b49b'},
   golden_shachi:{name:'金の鯱',stack:10,stage:7,color:'#e8c04a'}
 };
 const MACHINES={
@@ -369,6 +369,7 @@ function validateDefs(){
     }
     if(st(r)<need)e.push(id+': 解放段階が材料・出力素材より早く設定されています');
     if(!(r.every>0)||!(r.yield>=1))e.push(id+': every/yield が不正');
+    if(ITEMS[r.out]&&ITEMS[r.out].stack<CFG.MACHINE_OUT_CAP)e.push(id+': 生産品 '+r.out+' のスタック数が出力上限('+CFG.MACHINE_OUT_CAP+')より小さい');
   }
   for(const id in MACHINES){
     const m=MACHINES[id];
@@ -410,13 +411,14 @@ function mkInv(n){return Array.from({length:n},()=>({t:null,n:0}));}
 const player={money:CFG.START_MONEY,slots:mkInv(CFG.INV_SLOTS)};
 
 /* --- インベントリ操作 --- */
+// スロットの上限: スタック数と、スロット固有の上限(cap: 生産機械の入出力欄)の小さい方
+function slotMax(s,t){return s.cap===undefined?STACK[t]:Math.min(STACK[t],s.cap);}
 function invAdd(inv,t,n){                       // 入りきらなかった数を返す
-  const max=STACK[t];
-  for(const s of inv){ if(s.t===t&&s.n<max){const a=Math.min(n,max-s.n);s.n+=a;n-=a;if(!n)return 0;} }
-  for(const s of inv){ if(!s.t){const a=Math.min(n,max);s.t=t;s.n=a;n-=a;if(!n)return 0;} }
+  for(const s of inv){ if(s.t===t){const max=slotMax(s,t);if(s.n<max){const a=Math.min(n,max-s.n);s.n+=a;n-=a;if(!n)return 0;}} }
+  for(const s of inv){ if(!s.t){const a=Math.min(n,slotMax(s,t));if(a<=0)continue;s.t=t;s.n=a;n-=a;if(!n)return 0;} }
   return n;
 }
-function invRoom(inv,t){let r=0;const m=STACK[t];for(const s of inv){if(s.t===t)r+=m-s.n;else if(!s.t)r+=m;}return r;}
+function invRoom(inv,t){let r=0;for(const s of inv){if(s.t===t)r+=Math.max(0,slotMax(s,t)-s.n);else if(!s.t)r+=slotMax(s,t);}return r;}
 function invCount(inv,t){let c=0;for(const s of inv)if(s.t===t)c+=s.n;return c;}
 function invTake(inv,t,n){
   let got=0;
@@ -507,11 +509,19 @@ function newMachineState(kind){
     fuel:def.fuel?mkInv(CFG.MACHINE_SLOTS):null
   };
 }
+// 保持量の上限: 材料の入力欄=現在のレシピの必要数 / 生産品の出力欄=MACHINE_OUT_CAP(10個)。燃料欄は上限なし(スタック数まで)
+function applyCaps(b){
+  const def=MACHINES[b.kind];if(def.type!=='machine')return;
+  const r=RECIPES[b.recipe],keys=Object.keys(r.in);
+  b.ins.forEach((port,i)=>{for(const s of port){if(i<keys.length)s.cap=r.in[keys[i]];else delete s.cap;}});
+  for(const s of b.out)s.cap=CFG.MACHINE_OUT_CAP;
+}
 function allInvs(b){return b.inv?[b.inv]:[...(b.ins||[]),b.out,b.fuel].filter(Boolean);}
 function ensureSite(){if(!bldList.some(b=>b.kind==='site'))addBld('site',SITE.x,SITE.y);}
 function addBld(kind,x,y){
   const def=MACHINES[kind];
   const b=Object.assign({id:++uid,kind,x,y,w:def.w,h:def.h,ejRR:0,remain:0,cd:0,burn:0,working:false,ang:0,nbrs:[]},newMachineState(kind));
+  applyCaps(b);
   for(let dy=0;dy<b.h;dy++)for(let dx=0;dx<b.w;dx++)bld[(y+dy)*W+x+dx]=b;
   for(let i=0;i<Math.max(b.w,b.h);i++){
     if(i<b.w)b.nbrs.push({x:x+i,y:y-1,fx:x+i,fy:y},{x:x+i,y:y+b.h,fx:x+i,fy:y+b.h-1});
@@ -618,6 +628,7 @@ function changeRecipe(b,rid){
     else{invTake(b.ins[p.i],p.item,p.held);const q=p.held+p.refund;if(q)invAdd(player.slots,p.item,q);}
   }
   b.remain=0;b.cd=0;b.recipe=rid;
+  applyCaps(b);
   return true;
 }
 
@@ -1271,7 +1282,7 @@ function toast(msg){
 }
 function slotsHTML(inv,k){
   return '<div class="slots">'+inv.map((s,i)=>
-    `<button class="slot${s.t?'':' empty'}" data-k="${k}" data-i="${i}">${s.t?icon(s.t)+`<span class="n">${s.n}</span>`:''}</button>`).join('')+'</div>';
+    `<button class="slot${s.t?'':' empty'}" data-k="${k}" data-i="${i}">${s.t?icon(s.t)+`<span class="n">${s.n}${s.cap!==undefined?'/'+s.cap:''}</span>`:(s.cap!==undefined?`<span class="n" style="opacity:.55">0/${s.cap}</span>`:'')}</button>`).join('')+'</div>';
 }
 function refreshBar(){
   const bar=$('bar');
@@ -1464,6 +1475,7 @@ function applyState(d){
     else if(def.type==='buyer'){if(BUY[o.item])b.item=o.item;invLoad(b.out,o.out);}
     else if(def.type==='machine'){
       if(o.recipe&&def.recipes.includes(o.recipe))b.recipe=o.recipe;
+      applyCaps(b);
       const insArr=o.ins||[];
       b.ins.forEach((pt,i)=>invLoad(pt,insArr[i]));
       invLoad(b.out,o.out);if(b.fuel)invLoad(b.fuel,o.fuel);
@@ -1649,9 +1661,9 @@ function renderSheet(){
         +`<p class="hint">${line}。${r.burn?'燃料: '+ITEM_NAME[def.fuel]+'1個で'+r.burn+'秒稼働。':''}${st}</p>`
         +`<div class="bar"><i style="width:${(progOf(b)*100).toFixed(0)}%"></i></div>`
         +(sub.length?`<p class="hint">${sub.join(' ／ ')}</p>`:'')
-        +keys.map((k,i)=>`<h3>入力(${ITEM_NAME[k]})</h3>${slotsHTML(b.ins[i],'in'+i)}`).join('')
+        +keys.map((k,i)=>`<h3>入力(${ITEM_NAME[k]}・必要数${r.in[k]})</h3>${slotsHTML(b.ins[i],'in'+i)}`).join('')
         +(def.fuel?`<h3>燃料(${ITEM_NAME[def.fuel]})</h3>${slotsHTML(b.fuel,'fuel')}`:'')
-        +`<h3>出力</h3>${slotsHTML(b.out,'out')}`
+        +`<h3>出力(最大${CFG.MACHINE_OUT_CAP}個)</h3>${slotsHTML(b.out,'out')}`
         +`<h3>持ち物</h3>${slotsHTML(player.slots,'p')}`
         +`<p class="hint">スロットをタップすると反対側へ移動します。</p>`;
     }
