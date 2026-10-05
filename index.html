@@ -1,0 +1,1758 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>製材工場プロトタイプ</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0b0d10; --panel:#191c21; --panel2:#22262d; --line:#363c47;
+  --amber:#e8a33d; --teal:#4fd1c5; --red:#e2564a; --text:#e6e3dc; --dim:#8b909a;
+  --font:"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",ui-monospace,Menlo,Consolas,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;background:#0b0d10;color:var(--text);font-family:var(--font);overflow:hidden;overscroll-behavior:none;user-select:none;-webkit-user-select:none}
+canvas{position:fixed;inset:0;display:block;touch-action:none}
+button{font:inherit;color:inherit}
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:0 12px;min-height:40px;font-size:13px;cursor:pointer}
+.btn.on{border-color:var(--amber);background:#3a2c14;color:var(--amber)}
+.btn.ok{background:#1f4a47;border-color:var(--teal);color:#c9f5f0;font-weight:700}
+.btn.ok.bad{background:#54221f;border-color:var(--red);color:#ffd2cd}
+
+#top{position:fixed;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top,0px) + 6px) 8px 8px;display:flex;flex-direction:column;gap:6px;pointer-events:none;background:linear-gradient(#0b0d10f2,#0b0d1000)}
+#top>*{pointer-events:auto}
+.hud{display:flex;align-items:center;gap:6px}
+#money{flex:1;font-size:20px;font-weight:700;color:var(--amber);letter-spacing:.02em;font-variant-numeric:tabular-nums}
+#inv{display:flex;gap:3px}
+.slot{position:relative;flex:1;min-width:0;aspect-ratio:1;background:var(--panel);border:1px solid var(--line);border-radius:4px;display:flex;align-items:center;justify-content:center;padding:0}
+.slot.empty{opacity:.55}
+.slot svg{width:68%;height:68%}
+.slot .n{position:absolute;right:2px;bottom:0;font-size:10px;font-weight:700;color:var(--amber);text-shadow:0 0 3px #000,0 0 3px #000}
+
+#bottom{position:fixed;left:0;right:0;bottom:0;padding:8px 8px calc(env(safe-area-inset-bottom,0px) + 8px);display:flex;flex-direction:column;gap:6px;pointer-events:none;background:linear-gradient(#0b0d1000,#0b0d10ee 40%)}
+#bottom>*{pointer-events:auto}
+#bar{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+#barTxt{flex:1;font-size:12px;line-height:1.35;color:var(--dim)}
+#barTxt.bad{color:var(--red)}
+#tools{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.pick{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;min-height:60px;cursor:pointer}
+.pick svg{width:40px;height:40px;flex:none}
+.pick .pt{flex:1;min-width:0}
+.pick b{display:block;font-size:15px;color:var(--text)}
+.pick span.d{display:block;font-size:12px;color:var(--dim);line-height:1.4;margin-top:2px}
+.pick .c{font-size:12px;color:var(--amber);white-space:nowrap}
+.pick.cur{border-color:var(--amber)}
+#tools .btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:4px 2px;min-height:48px;font-size:12px}
+#tools .btn small{font-size:10px;color:var(--dim)}
+#tools .btn.on small{color:var(--amber)}
+
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 92px);transform:translateX(-50%);background:#101216f0;border:1px solid var(--amber);color:var(--text);padding:8px 14px;border-radius:8px;font-size:13px;z-index:40;pointer-events:none;max-width:90%;text-align:center}
+
+#sheet{position:fixed;inset:0;z-index:20;display:flex;align-items:flex-end;justify-content:center}
+#sheet .bd{position:absolute;inset:0;background:#000000aa}
+#sheet .card{position:relative;width:min(560px,100%);max-height:84%;overflow:auto;background:var(--panel);border-top:2px solid var(--amber);border-radius:12px 12px 0 0;padding:12px 12px calc(env(safe-area-inset-bottom,0px) + 16px)}
+.ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.ch h2{margin:0;font-size:17px;color:var(--amber)}
+.card h3{margin:14px 0 6px;font-size:13px;color:var(--dim);font-weight:600}
+.card p{margin:4px 0;font-size:13px;line-height:1.6}
+.card ol{margin:6px 0;padding-left:20px;font-size:13px;line-height:1.7}
+.slots{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.slots .slot{aspect-ratio:auto;min-height:54px;cursor:pointer}
+.slots .slot .n{font-size:12px;right:4px;bottom:2px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.row .grp{display:flex;gap:6px}
+.row .btn{min-width:56px}
+.name{display:flex;align-items:center;gap:8px}
+.name svg{width:24px;height:24px}
+.bar{height:8px;background:#0e1013;border:1px solid var(--line);border-radius:4px;overflow:hidden;margin:6px 0}
+.bar i{display:block;height:100%;background:var(--amber)}
+.hint{color:var(--dim);font-size:12px}
+.btn:disabled{opacity:.4;cursor:default}
+.hud .btn{padding:0 9px}
+.locked{opacity:.45}
+.pick.locked{cursor:default}
+#devTag{font-size:11px;font-weight:700;color:#0b0d10;background:var(--amber);padding:3px 7px;border-radius:4px}
+.set{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.set .t{flex:1;min-width:0}
+.set .t b{display:block;font-size:14px}
+.set .t span{display:block;font-size:12px;color:var(--dim);line-height:1.5;margin-top:2px}
+.set .sv{display:inline-block;min-width:36px;text-align:center;font-size:14px}
+.sw{width:52px;height:30px;border-radius:15px;border:1px solid var(--line);background:#0e1013;position:relative;flex:none;cursor:pointer;padding:0}
+.sw::after{content:'';position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--dim);transition:left .15s,background .15s}
+.sw.on{background:#3a2c14;border-color:var(--amber)}
+.sw.on::after{left:25px;background:var(--amber)}
+.grp2{display:flex;gap:6px;flex-wrap:wrap}
+.grp2 .btn{display:inline-flex;align-items:center;gap:6px;min-width:84px;justify-content:center}
+.grp2 .btn svg{width:20px;height:20px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="top">
+  <div class="hud">
+    <div id="money">¥5,000</div>
+    <span id="devTag" hidden>開発者</span>
+    <button class="btn" id="btnStage">城 1/7</button>
+    <button class="btn" id="btnSave">セーブ</button>
+    <button class="btn" id="btnShop">店</button>
+    <button class="btn" id="btnSettings">設定</button>
+  </div>
+  <div id="inv"></div>
+</div>
+
+<div id="toast" hidden></div>
+
+<div id="bottom">
+  <div id="bar" hidden>
+    <div id="barTxt"></div>
+    <button class="btn" id="btnRot">⟳ →</button>
+    <button class="btn" id="btnNo">取消</button>
+    <button class="btn ok" id="btnOk">確定</button>
+  </div>
+  <div id="tools">
+    <button class="btn" data-tool="pan">移動<small>&nbsp;</small></button>
+    <button class="btn" data-tool="conv">コンベア<small>木材1</small></button>
+    <button class="btn" id="btnBuild">設置<small id="buildSub">選ぶ</small></button>
+    <button class="btn" data-tool="erase">撤去<small>返却</small></button>
+  </div>
+</div>
+
+<div id="sheet" hidden>
+  <div class="bd" id="shBd"></div>
+  <div class="card">
+    <div class="ch"><h2 id="shT"></h2><button class="btn" id="shX">閉じる</button></div>
+    <div id="shB"></div>
+  </div>
+</div>
+
+<script>
+(()=>{
+'use strict';
+
+/* ================= 設定 ================= */
+const CFG={
+  W:100,H:100,CS:32,
+  START_MONEY:5000,START_LUMBER:30,
+  LOG_PRICE:200,LUMBER_SELL:5,
+  LOG_YIELD:50,                 // 原木1個 → 木材50個(1秒に1個)
+  COST:{sawmill:10,processor:10,storage:5,conveyor:1},   // 設置コスト(木材)
+  INV_SLOTS:10,
+  STORAGE_SLOTS:2,MACHINE_SLOTS:1,   // MACHINE_SLOTS: 製作系機械の内部ストレージ(入力/出力それぞれ)は必ず1マス。今後追加する機械も同様
+  TICK_MS:1000
+};
+/* ================= データ定義(素材・機械・レシピ・段階) =================
+ * 新しい素材/機械/レシピは、ここに足すだけで 店・設置メニュー・生産・セーブ に反映されます。
+ *  ITEMS   : stack=スタック数 / buy=店の購入価格(一次資源) / sell=店の売値(加工品) / color=簡易表示色 / stage=解放される段階(省略=1)
+ *  MACHINES: type 'machine'(レシピで生産) | 'storage'(貯蔵) | 'site'(建設現場) / w,h=大きさ / cost=設置コスト / stage=解放段階
+ *            ports=入力ポート数(各1スロット) / fuel=燃料素材(燃料用1スロットを持つ) / recipes=使えるレシピ(先頭が初期)
+ *  RECIPES : in={素材:数}(材料ごとに入力ポート1つ=1スロット) / out=出力素材 / yield=1回の投入で出す個数
+ *            every=出力間隔(秒) / burn=燃料1個で稼働する秒数(燃料が必要なレシピのみ) / stage=解放段階
+ *            → 1回の所要時間 = yield × every 秒、毎分の出力 = 60 / every
+ *  STAGES  : need={素材:数}=建設現場への納品物 / reward=クリア報酬 / wip=未実装(準備中) / temp=暫定の納品物
+ */
+const ITEMS={
+  log:{name:'原木',stack:1,buy:CFG.LOG_PRICE,color:'#8b5e34'},
+  rock:{name:'岩',stack:1,buy:500,stage:2,color:'#7d8794'},
+  iron_ore:{name:'鉄鉱石',stack:1,buy:1200,stage:3,color:'#7a4f3f'},
+  lumber:{name:'木材',stack:50,sell:CFG.LUMBER_SELL,color:'#d8b170'},
+  plank:{name:'板',stack:50,sell:12,color:'#efd9a8'},
+  stick:{name:'棒',stack:50,sell:12,color:'#b98a4e'},
+  stone:{name:'石',stack:50,sell:12,stage:2,color:'#aab2bd'},
+  stone_block:{name:'切石',stack:50,sell:45,stage:2,color:'#c9ccd1'},
+  iron:{name:'鉄',stack:50,sell:50,stage:3,color:'#a9b8ca'},
+  iron_plate:{name:'鉄板',stack:50,sell:60,stage:3,color:'#8fa2b8'},
+  iron_rod:{name:'鉄棒',stack:50,sell:60,stage:3,color:'#9db0c6'},
+  nail:{name:'釘',stack:50,sell:18,stage:3,color:'#b8bec7'},
+  iron_frame:{name:'鉄骨',stack:50,sell:290,stage:3,color:'#6f8299'},
+  clay:{name:'粘土',stack:1,buy:300,stage:4,color:'#b5703d'},
+  sand:{name:'砂',stack:1,buy:250,stage:4,color:'#e0c27a'},
+  limestone:{name:'石灰岩',stack:1,buy:600,stage:4,color:'#d9d6c9'},
+  brick:{name:'レンガ',stack:50,sell:10,stage:4,color:'#b0523a'},
+  roof_tile:{name:'瓦',stack:50,sell:12,stage:4,color:'#c0643c'},
+  glass:{name:'ガラス',stack:50,sell:12,stage:4,color:'#9fd3e6'},
+  lime:{name:'石灰',stack:50,sell:15,stage:4,color:'#f1efe6'},
+  mortar:{name:'モルタル',stack:50,sell:32,stage:4,color:'#9aa0a6'},
+  coal:{name:'石炭',stack:1,buy:900,stage:5,color:'#2b2b2e'},
+  steel:{name:'鋼',stack:50,sell:55,stage:5,color:'#5f7186'},
+  steel_plate:{name:'鋼板',stack:50,sell:65,stage:5,color:'#4d5d70'},
+  wall_panel:{name:'壁パネル',stack:50,sell:290,stage:5,color:'#b3a28a'},
+  window_unit:{name:'窓ユニット',stack:50,sell:200,stage:5,color:'#7fb6cf'},
+  beam:{name:'梁',stack:50,sell:170,stage:5,color:'#a77b4a'},
+  gold_ore:{name:'金鉱石',stack:1,buy:3000,stage:6,color:'#c9a227'},
+  gold:{name:'金',stack:50,sell:360,stage:6,color:'#e0b83a'},
+  gold_leaf:{name:'金箔',stack:50,sell:80,stage:6,color:'#f2d36b'},
+  statue:{name:'石像',stack:50,sell:170,stage:6,color:'#aeb5bf'},
+  castle_gate:{name:'城門',stack:20,stage:6,color:'#6b4f3a'},
+  tower_unit:{name:'塔ユニット',stack:20,stage:6,color:'#a8977f'},
+  roof_unit:{name:'屋根ユニット',stack:20,stage:7,color:'#7b4a3a'},
+  keep_unit:{name:'天守ユニット',stack:5,stage:7,color:'#c2b49b'},
+  golden_shachi:{name:'金の鯱',stack:10,stage:7,color:'#e8c04a'}
+};
+const MACHINES={
+  sawmill:{name:'製材機',type:'machine',w:2,h:2,cost:{lumber:10},ports:1,recipes:['saw_log'],
+    color:'#e8a33d',bg:'#343942',spin:.012,desc:'原木を木材に加工(原木1個 → 木材50個、1秒に1個)'},
+  processor:{name:'加工機',type:'machine',w:2,h:2,cost:{lumber:10},ports:1,recipes:['plank','stick','cut_stone','iron_plate','iron_rod','nail','steel_plate','gold_leaf','statue'],
+    color:'#c2571a',bg:'#3a3431',spin:.008,desc:'木材を板・棒に、石を切石に、鉄を鉄板・鉄棒に、鉄棒を釘に、鋼を鋼板に、金を金箔に、切石を石像に加工(レシピ切替可)'},
+  crusher:{name:'破砕機',type:'machine',w:2,h:2,cost:{lumber:10,plank:10},stage:2,ports:1,recipes:['crush_rock'],
+    color:'#9aa4b1',bg:'#33363b',spin:.01,desc:'岩を石に加工(岩1個 → 石50個、毎分20個)'},
+  smelter:{name:'精錬機',type:'machine',w:2,h:2,cost:{lumber:10,stone:10},stage:3,ports:1,fuel:'lumber',recipes:['smelt_iron','smelt_gold'],
+    color:'#e0793a',bg:'#352c29',spin:0,desc:'鉄鉱石を鉄に、金鉱石を金に精錬(鉄: 鉄鉱石1個 → 鉄50個、毎分15個)。燃料の木材が必要(木材1個で4秒稼働)'},
+  kiln:{name:'窯',type:'machine',w:2,h:2,cost:{lumber:10,stone:30,iron_plate:5},stage:4,ports:1,fuel:'lumber',recipes:['bake_brick','bake_tile','bake_glass','bake_lime'],
+    color:'#c9704a',bg:'#3a2c26',spin:0,desc:'粘土・砂・石灰岩を焼く(レンガ・瓦・ガラス・石灰)。燃料の木材が必要(木材1個で4秒稼働)'},
+  blast_furnace:{name:'高炉',type:'machine',w:2,h:2,cost:{stone_block:10,brick:30,iron_plate:10},stage:5,ports:2,fuel:'lumber',recipes:['smelt_steel'],
+    color:'#ff7a3d',bg:'#33292a',spin:0,desc:'鉄鉱石と石炭から鋼を作る(各1個 → 鋼50個、毎分12個)。燃料の木材が必要(木材1個で4秒稼働)'},
+  assembler:{name:'組立機',type:'machine',w:2,h:2,cost:{lumber:10,iron_plate:10,iron_rod:5},stage:3,ports:2,recipes:['iron_frame','mortar','wall_panel','window_unit','beam'],
+    color:'#5aa7c9',bg:'#2c333b',spin:.01,desc:'複数の材料を組み合わせて部品を作る(鉄骨・モルタル・壁パネル・窓ユニット・梁。材料ごとに入力ポートが1つ)'},
+  large_assembler:{name:'大型組立機',type:'machine',w:3,h:3,cost:{steel_plate:10,iron_frame:5,glass:5,plank:20},stage:6,ports:4,
+    recipes:['castle_gate','tower_unit','roof_unit','keep_unit','golden_shachi'],
+    color:'#d9a441',bg:'#352f26',spin:.006,desc:'大型の部品・最終部材を組み立てる(城門・塔ユニット・屋根ユニット・天守ユニット・金の鯱。入力ポート4つ)'},
+  autobuyer:{name:'自動購入機',type:'buyer',w:2,h:2,cost:{lumber:10,iron_plate:10,iron_rod:10},stage:3,every:10,
+    color:'#e8c04a',desc:'選んだ一次資源を店の価格で自動購入して出力(10秒に1個・毎分6個)'},
+  autobuyer_mk2:{name:'自動購入機Mk2',type:'buyer',w:2,h:2,cost:{steel_plate:10,iron_frame:5},stage:5,every:5,
+    color:'#ffd35a',desc:'自動購入機の上位型。5秒に1個・毎分12個を購入して出力'},
+  sorter:{name:'仕分け機',type:'belt',w:1,h:1,cost:{lumber:5,plank:5},stage:2,
+    color:'#8fd18a',desc:'指定した素材は前方へ、それ以外は左右へ流す(設置後にタップして素材を指定)'},
+  bridge:{name:'橋',type:'belt',w:1,h:1,cost:{iron_plate:2},stage:3,
+    color:'#9db0c6',desc:'コンベアを立体交差させる(縦と横を独立して通す)'},
+  storage:{name:'ストレージ',type:'storage',w:2,h:2,cost:{lumber:5},slots:CFG.STORAGE_SLOTS,
+    color:'#4fd1c5',desc:'資源を貯蔵(2スロット)'},
+  large_storage:{name:'大型ストレージ',type:'storage',w:3,h:3,cost:{lumber:20,stone_block:10,iron_plate:10},stage:4,slots:6,
+    color:'#4fd1c5',desc:'資源を貯蔵(6スロット)'},
+  site:{name:'建設現場',type:'site',w:4,h:4,cost:{},color:'#e8a33d',desc:'城の建設現場。段階ごとの納品物を運び込みます'}
+};
+const RECIPES={
+  saw_log:{in:{log:1},out:'lumber',yield:CFG.LOG_YIELD,every:1},
+  crush_rock:{in:{rock:1},out:'stone',yield:50,every:3,stage:2},
+  smelt_iron:{in:{iron_ore:1},out:'iron',yield:50,every:4,burn:4,stage:3},
+  plank:{in:{lumber:1},out:'plank',yield:1,every:3},
+  stick:{in:{lumber:1},out:'stick',yield:1,every:3},
+  cut_stone:{in:{stone:3},out:'stone_block',yield:1,every:6,stage:2},
+  iron_plate:{in:{iron:1},out:'iron_plate',yield:1,every:3,stage:3},
+  iron_rod:{in:{iron:1},out:'iron_rod',yield:1,every:3,stage:3},
+  nail:{in:{iron_rod:1},out:'nail',yield:4,every:1,stage:3},            // 鉄棒1 → 釘4(1秒に1個=毎分60個)
+  iron_frame:{in:{iron_plate:2,iron_rod:2},out:'iron_frame',yield:1,every:6,stage:3},   // 毎分10個
+  mortar:{in:{lime:2,stone:2},out:'mortar',yield:2,every:2,stage:4},                    // 石灰2+石2 → モルタル2(毎分30個)
+  bake_brick:{in:{clay:1},out:'brick',yield:50,every:4,burn:4,stage:4},                  // 毎分15個
+  bake_tile:{in:{clay:1},out:'roof_tile',yield:50,every:5,burn:4,stage:4},               // 毎分12個
+  bake_glass:{in:{sand:1},out:'glass',yield:50,every:6,burn:4,stage:4},                  // 毎分10個
+  bake_lime:{in:{limestone:1},out:'lime',yield:50,every:4,burn:4,stage:4},                // 毎分15個
+  smelt_steel:{in:{iron_ore:1,coal:1},out:'steel',yield:50,every:5,burn:4,stage:5},       // 鉄鉱石1+石炭1 → 鋼50(毎分12個)
+  steel_plate:{in:{steel:1},out:'steel_plate',yield:1,every:4,stage:5},                  // 毎分15個
+  wall_panel:{in:{stone_block:4,mortar:2},out:'wall_panel',yield:1,every:8,stage:5},     // 毎分7.5個
+  window_unit:{in:{glass:4,iron_rod:2},out:'window_unit',yield:1,every:6,stage:5},       // 毎分10個
+  beam:{in:{plank:3,nail:6},out:'beam',yield:1,every:6,stage:5},                          // 毎分10個
+  smelt_gold:{in:{gold_ore:1},out:'gold',yield:10,every:6,burn:4,stage:6},             // 金鉱石1 → 金10(毎分10個)
+  gold_leaf:{in:{gold:1},out:'gold_leaf',yield:5,every:1,stage:6},                      // 金1 → 金箔5(毎分60個)
+  statue:{in:{stone_block:3},out:'statue',yield:1,every:12,stage:6},                    // 毎分5個
+  castle_gate:{in:{steel_plate:8,plank:10,nail:40},out:'castle_gate',yield:1,every:30,stage:6},          // 毎分2個
+  tower_unit:{in:{wall_panel:10,beam:5,window_unit:4},out:'tower_unit',yield:1,every:40,stage:6},        // 毎分1.5個
+  roof_unit:{in:{roof_tile:40,beam:4,nail:20},out:'roof_unit',yield:1,every:30,stage:7},                 // 毎分2個
+  keep_unit:{in:{tower_unit:4,roof_unit:2,iron_frame:20,statue:4},out:'keep_unit',yield:1,every:120,stage:7},   // 毎分0.5個
+  golden_shachi:{in:{gold_leaf:50,steel:10},out:'golden_shachi',yield:1,every:60,stage:7}                // 毎分1個
+};
+const STAGES=[
+  {n:1,name:'木工',sub:'足場',need:{plank:200,stick:100},reward:3000},
+  {n:2,name:'石工',sub:'基礎',need:{stone_block:120},reward:6000},
+  {n:3,name:'製鉄',sub:'骨組み',need:{iron_frame:40,nail:200},reward:10000},
+  {n:4,name:'窯業',sub:'壁と屋根の下地',need:{roof_tile:150,mortar:100,glass:50},reward:12000},
+  {n:5,name:'製鋼',sub:'城壁と窓',need:{wall_panel:40,window_unit:20,beam:30,steel:60},reward:20000},
+  {n:6,name:'大型組立',sub:'門と塔',need:{castle_gate:1,tower_unit:4,statue:8},reward:30000},
+  {n:7,name:'築城',sub:'天守',need:{keep_unit:1,golden_shachi:2},reward:0}
+];
+const SITE={x:48,y:46};          // 建設現場の固定位置(4x4)
+// ---- 定義から導出(他のコードはこれらを参照) ----
+const STACK={},ITEM_NAME={},BUY={},SELL={};
+for(const id in ITEMS){const it=ITEMS[id];STACK[id]=it.stack;ITEM_NAME[id]=it.name;if(it.buy)BUY[id]=it.buy;if(it.sell)SELL[id]=it.sell;}
+const BTOOLS=Object.keys(MACHINES).filter(id=>MACHINES[id].type!=='site'),NAMES={},BCOST={},BINFO={};
+for(const id in MACHINES){const m=MACHINES[id];NAMES[id]=m.name;BCOST[id]=m.cost;BINFO[id]={d:m.desc,c:m.color};}
+// ---- 段階の進行状態 ----
+const game={stage:1,delivered:{},done:false};
+const unlockedAt=n=>n<=game.stage||(DEV()&&!!settings.unlockAll);
+const isUnlocked=o=>unlockedAt((o&&o.stage)||1);
+const curStage=()=>STAGES[game.stage-1];
+function stageNeed(t){const st=curStage();if(game.done||!st||!st.need)return 0;return Math.max(0,(st.need[t]||0)-(game.delivered[t]||0));}
+function stageProgress(){
+  const st=curStage();if(game.done)return 1;if(!st||!st.need)return 0;
+  const ks=Object.keys(st.need);
+  return ks.reduce((a,k)=>a+Math.min(1,(game.delivered[k]||0)/st.need[k]),0)/ks.length;
+}
+function deliver(t,n){game.delivered[t]=(game.delivered[t]||0)+n;checkStage();}
+function checkStage(){
+  const st=curStage();if(game.done||!st||!st.need)return;
+  if(Object.keys(st.need).every(k=>(game.delivered[k]||0)>=st.need[k]))clearStage();
+}
+// 段階nで新しく解放されるものの説明(配列)
+function unlocksOf(n){
+  const L=[];
+  const items=Object.keys(ITEMS).filter(k=>(ITEMS[k].stage||1)===n).map(k=>ITEM_NAME[k]);
+  if(items.length)L.push('素材: '+items.join('・'));
+  const shop=Object.keys(BUY).filter(k=>(ITEMS[k].stage||1)===n).map(k=>ITEM_NAME[k]);
+  if(shop.length)L.push('店で購入できる: '+shop.join('・'));
+  const bs=BTOOLS.filter(k=>(MACHINES[k].stage||1)===n).map(k=>NAMES[k]);
+  if(bs.length)L.push('設備: '+bs.join('・'));
+  for(const id of BTOOLS){
+    const m=MACHINES[id];if(m.type!=='machine'||(m.stage||1)===n)continue;
+    const rs=m.recipes.filter(r=>(RECIPES[r].stage||1)===n).map(r=>ITEM_NAME[RECIPES[r].out]);
+    if(rs.length)L.push(m.name+'の新レシピ: '+rs.join('・'));
+  }
+  return L;
+}
+function clearStage(){
+  const st=curStage(),last=st.n===STAGES.length;
+  player.money+=st.reward||0;
+  if(last)game.done=true;else game.stage++;
+  game.delivered={};
+  openSheet({type:'clear',from:st,to:curStage(),reward:st.reward||0,last,lines:last?[]:unlocksOf(game.stage)});
+  if(typeof doAutosave==='function'&&settings.autoSave&&ready)doAutosave();
+}
+function deliverFromInv(i){
+  const s=player.slots[i];if(!s||!s.t)return;
+  const need=stageNeed(s.t);
+  if(!need){toast(game.done?'城は完成しています':(curStage().wip?'この段階は準備中です':'今の段階では必要ない素材です'));return;}
+  const t=s.t,q=Math.min(s.n,need);s.n-=q;if(!s.n)s.t=null;
+  deliver(t,q);
+}
+// ---- 城の絵(段階が進むごとに育つ) 100x80 座標 ----
+const CASTLE=[
+  [['r',12,28,2,44,'#b98a4e'],['r',34,28,2,44,'#b98a4e'],['r',64,28,2,44,'#b98a4e'],['r',86,28,2,44,'#b98a4e'],['r',10,40,80,2,'#b98a4e'],['r',10,56,80,2,'#b98a4e']],
+  [['r',6,66,88,8,'#8a919c'],['r',6,70,88,1,'#6b727d']],
+  [['r',13,32,3,34,'#6f8299'],['r',35,32,3,34,'#6f8299'],['r',63,32,3,34,'#6f8299'],['r',85,32,3,34,'#6f8299'],['r',12,32,76,3,'#6f8299'],['r',12,48,76,2,'#6f8299']],
+  [['r',10,42,80,24,'#b3a28a'],['r',10,38,80,4,'#9c8a6f']],
+  [['r',10,36,6,6,'#b3a28a'],['r',22,36,6,6,'#b3a28a'],['r',34,36,6,6,'#b3a28a'],['r',46,36,6,6,'#b3a28a'],['r',58,36,6,6,'#b3a28a'],['r',70,36,6,6,'#b3a28a'],['r',82,36,8,6,'#b3a28a'],
+   ['r',20,50,6,9,'#2b3440'],['r',36,50,6,9,'#2b3440'],['r',58,50,6,9,'#2b3440'],['r',74,50,6,9,'#2b3440']],
+  [['r',4,26,16,40,'#a8977f'],['r',80,26,16,40,'#a8977f'],['p',[2,26,12,14,22,26],'#7b4a3a'],['p',[78,26,88,14,98,26],'#7b4a3a'],['r',42,48,16,18,'#23282f']],
+  [['r',34,16,32,28,'#c2b49b'],['p',[30,16,50,4,70,16],'#7b4a3a'],['p',[46,5,50,0,54,5],'#e8c04a']]
+];
+function castleAlpha(i){
+  if(game.done)return 1;
+  const done=game.stage-1;
+  return i<done?1:(i===done?.25+.65*stageProgress():0);
+}
+function castleSVG(){
+  let o='<svg viewBox="0 0 100 80" style="width:100%;max-height:170px;background:#14171b;border-radius:8px;display:block"><rect x="0" y="74" width="100" height="6" fill="#1d2127"/>';
+  CASTLE.forEach((L,i)=>{
+    const a=castleAlpha(i);if(a<=0)return;
+    o+=`<g opacity="${a.toFixed(2)}">`+L.map(sh=>sh[0]==='r'?`<rect x="${sh[1]}" y="${sh[2]}" width="${sh[3]}" height="${sh[4]}" fill="${sh[5]}"/>`:`<polygon points="${sh[1].join(' ')}" fill="${sh[2]}"/>`).join('')+'</g>';
+  });
+  return o+'</svg>';
+}
+function drawCastle(x,y,sc){
+  ctx.save();ctx.translate(x,y);ctx.scale(sc,sc);
+  ctx.fillStyle='#1d2127';ctx.fillRect(0,74,100,6);
+  CASTLE.forEach((L,i)=>{
+    const a=castleAlpha(i);if(a<=0)return;
+    ctx.globalAlpha=a;
+    for(const sh of L){
+      ctx.fillStyle=sh[0]==='r'?sh[5]:sh[2];
+      if(sh[0]==='r')ctx.fillRect(sh[1],sh[2],sh[3],sh[4]);
+      else{ctx.beginPath();const q=sh[1];ctx.moveTo(q[0],q[1]);for(let k=2;k<q.length;k+=2)ctx.lineTo(q[k],q[k+1]);ctx.closePath();ctx.fill();}
+    }
+  });
+  ctx.restore();
+}
+// 定義の整合チェック(エラー文字列の配列を返す)
+function validateDefs(){
+  const e=[],st=o=>(o&&o.stage)||1;
+  for(const id in RECIPES){
+    const r=RECIPES[id];
+    if(!ITEMS[r.out])e.push(id+': 出力素材が未定義');
+    let need=st(ITEMS[r.out]);
+    for(const k in r.in){
+      if(!ITEMS[k])e.push(id+': 材料 '+k+' が未定義');
+      else{
+        if(r.in[k]>ITEMS[k].stack)e.push(id+': '+k+' の必要数がスタック上限('+ITEMS[k].stack+')を超えています');
+        need=Math.max(need,st(ITEMS[k]));
+      }
+    }
+    if(st(r)<need)e.push(id+': 解放段階が材料・出力素材より早く設定されています');
+    if(!(r.every>0)||!(r.yield>=1))e.push(id+': every/yield が不正');
+  }
+  for(const id in MACHINES){
+    const m=MACHINES[id];
+    for(const c in m.cost){
+      if(!ITEMS[c])e.push(id+': コスト素材 '+c+' が未定義');
+      else if(st(ITEMS[c])>st(m))e.push(id+': コスト素材 '+c+' が機械より後に解放されます');
+    }
+    if(m.type!=='machine')continue;
+    if(m.fuel&&!ITEMS[m.fuel])e.push(id+': 燃料素材が未定義');
+    for(const rid of m.recipes){
+      const r=RECIPES[rid];
+      if(!r){e.push(id+': レシピ '+rid+' が未定義');continue;}
+      if(Object.keys(r.in).length>m.ports)e.push(id+'/'+rid+': 材料数が入力ポート数を超えています');
+      if(r.burn&&!m.fuel)e.push(id+'/'+rid+': 燃料が必要なレシピなのに機械に燃料がありません');
+      if(st(r)<st(m))e.push(id+'/'+rid+': レシピが機械より早く解放されます');
+    }
+  }
+  STAGES.forEach((g,i)=>{
+    if(g.n!==i+1)e.push('段階'+(i+1)+': 番号が不正');
+    for(const k in (g.need||{}))if(!ITEMS[k])e.push('段階'+g.n+': 納品物 '+k+' が未定義');else if(st(ITEMS[k])>g.n)e.push('段階'+g.n+': 納品物 '+k+' がその段階より後に解放されます');
+  });
+  return e;
+}
+function canAfford(c){for(const t in c)if(invCount(player.slots,t)<c[t])return false;return true;}
+function payCost(c){for(const t in c)invTake(player.slots,t,c[t]);}
+function refundCost(c){for(const t in c)invAdd(player.slots,t,c[t]);}
+function costText(c){return Object.keys(c).map(t=>ITEM_NAME[t]+c[t]).join(' + ');}
+const W=CFG.W,H=CFG.H,CS=CFG.CS;
+const DX=[0,1,0,-1],DY=[-1,0,1,0];          // 0上 1右 2下 3左
+const ARROWS=['↑','→','↓','←'];
+
+/* ================= 状態 ================= */
+const conv=new Array(W*H).fill(null);
+const bld=new Array(W*H).fill(null);
+const convList=[],bldList=[],bridgeList=[];
+let uid=0,tickNo=0,tf=0,frameDt=16;
+
+function mkInv(n){return Array.from({length:n},()=>({t:null,n:0}));}
+const player={money:CFG.START_MONEY,slots:mkInv(CFG.INV_SLOTS)};
+
+/* --- インベントリ操作 --- */
+function invAdd(inv,t,n){                       // 入りきらなかった数を返す
+  const max=STACK[t];
+  for(const s of inv){ if(s.t===t&&s.n<max){const a=Math.min(n,max-s.n);s.n+=a;n-=a;if(!n)return 0;} }
+  for(const s of inv){ if(!s.t){const a=Math.min(n,max);s.t=t;s.n=a;n-=a;if(!n)return 0;} }
+  return n;
+}
+function invRoom(inv,t){let r=0;const m=STACK[t];for(const s of inv){if(s.t===t)r+=m-s.n;else if(!s.t)r+=m;}return r;}
+function invCount(inv,t){let c=0;for(const s of inv)if(s.t===t)c+=s.n;return c;}
+function invTake(inv,t,n){
+  let got=0;
+  for(let i=inv.length-1;i>=0&&got<n;i--){const s=inv[i];if(s.t===t){const a=Math.min(s.n,n-got);s.n-=a;got+=a;if(!s.n)s.t=null;}}
+  return got;
+}
+function invPopAny(inv){for(const s of inv)if(s.t){const t=s.t;s.n--;if(!s.n)s.t=null;return t;}return null;}
+invAdd(player.slots,'lumber',CFG.START_LUMBER);
+
+/* ================= コンベア ================= */
+function addConv(x,y,outs){const c={x,y,outs:outs.slice(),rr:0,item:null,done:0};conv[y*W+x]=c;convList.push(c);return c;}
+function removeConv(c){
+  if(sheet&&sheet.c===c)closeSheet();
+  if(c.bridge){
+    for(const l of c.lanes){const k=convList.indexOf(l);if(k>=0){convList[k]=convList[convList.length-1];convList.pop();}}
+    const j=bridgeList.indexOf(c);if(j>=0)bridgeList.splice(j,1);
+    conv[c.y*W+c.x]=null;return;
+  }
+  conv[c.y*W+c.x]=null;
+  const i=convList.indexOf(c);
+  if(i>=0){convList[i]=convList[convList.length-1];convList.pop();}
+}
+// 仕分け機: 指定素材は前方、それ以外は左右へ(指定なしならすべて前方)
+function addSorter(x,y,fwd,filter){const c=addConv(x,y,[fwd,(fwd+3)%4,(fwd+1)%4]);c.sorter=true;c.fwd=fwd;c.filter=filter||null;return c;}
+function setSorterDir(c,fwd){c.fwd=fwd;c.outs=[fwd,(fwd+3)%4,(fwd+1)%4];}
+function routeOuts(c,t){
+  if(!c.sorter)return c.outs;
+  if(!c.filter||t===c.filter)return [c.fwd];
+  return [(c.fwd+3)%4,(c.fwd+1)%4];
+}
+// 橋: 1マスに4方向のレーン(各レーンは進行方向へまっすぐ進む)を持つ立体交差
+function addBridge(x,y){
+  const br={x,y,bridge:true,outs:[],lanes:[]};
+  for(let d=0;d<4;d++){const l={x,y,outs:[d],rr:0,item:null,done:0,lane:true};br.lanes.push(l);convList.push(l);}
+  conv[y*W+x]=br;bridgeList.push(br);return br;
+}
+// 1x1の設置物(仕分け機・橋)の設置。既存の通常コンベアの上には置き換えて設置できる
+function placeBelt(kind,x,y){
+  const old=conv[y*W+x];
+  let fwd=defDir;
+  if(old){if(!old.sorter&&!old.bridge&&old.outs.length)fwd=old.outs[0];removeConv(old);}
+  if(kind==='sorter')addSorter(x,y,fwd,null);else addBridge(x,y);
+}
+function feedsInto(c,b){
+  for(const d of c.outs){const nx=c.x+DX[d],ny=c.y+DY[d];if(nx>=0&&ny>=0&&nx<W&&ny<H&&bld[ny*W+nx]===b)return true;}
+  return false;
+}
+// 1ティック内で「先に行き先を動かしてから自分が動く」再帰処理(詰まり・ループは自然に停止)
+function resolve(c){
+  if(c.done===tickNo)return;
+  c.done=tickNo;
+  const it=c.item;
+  if(!it||it.tk===tickNo)return;
+  const outs=routeOuts(c,it.t),n=outs.length;
+  for(let k=0;k<n;k++){
+    const d=outs[(c.rr+k)%n];
+    const nx=c.x+DX[d],ny=c.y+DY[d];
+    if(nx<0||ny<0||nx>=W||ny>=H)continue;
+    const i=ny*W+nx;
+    let tc=conv[i];
+    if(tc&&tc.bridge)tc=tc.lanes[d];               // 橋へは進行方向のレーンに入る
+    if(tc){
+      if(tc.outs.includes((d+2)%4))continue;      // 正面衝突は不可
+      resolve(tc);
+      if(tc.item)continue;
+      tc.item={t:it.t,tk:tickNo,fx:c.x,fy:c.y};
+      c.item=null;c.rr=(c.rr+k+1)%n;return;
+    }
+    const b=bld[i];
+    if(b&&accepts(b,it.t)){
+      receive(b,it.t);
+      c.item=null;c.rr=(c.rr+k+1)%n;return;
+    }
+  }
+}
+
+/* ================= 建物 ================= */
+// 機械の実行時状態: ins=入力ポート配列(各1スロット) / out=出力(1スロット) / fuel=燃料(1スロット)
+function newMachineState(kind){
+  const def=MACHINES[kind];
+  if(def.type==='storage')return {inv:mkInv(def.slots)};
+  if(def.type==='site')return {};
+  if(def.type==='buyer')return {item:'log',cd:0,out:mkInv(CFG.MACHINE_SLOTS)};
+  return {
+    recipe:def.recipes[0],
+    ins:Array.from({length:def.ports},()=>mkInv(CFG.MACHINE_SLOTS)),   // 製作系機械の内部ストレージは必ず1マス
+    out:mkInv(CFG.MACHINE_SLOTS),
+    fuel:def.fuel?mkInv(CFG.MACHINE_SLOTS):null
+  };
+}
+function allInvs(b){return b.inv?[b.inv]:[...(b.ins||[]),b.out,b.fuel].filter(Boolean);}
+function ensureSite(){if(!bldList.some(b=>b.kind==='site'))addBld('site',SITE.x,SITE.y);}
+function addBld(kind,x,y){
+  const def=MACHINES[kind];
+  const b=Object.assign({id:++uid,kind,x,y,w:def.w,h:def.h,ejRR:0,remain:0,cd:0,burn:0,working:false,ang:0,nbrs:[]},newMachineState(kind));
+  for(let dy=0;dy<b.h;dy++)for(let dx=0;dx<b.w;dx++)bld[(y+dy)*W+x+dx]=b;
+  for(let i=0;i<Math.max(b.w,b.h);i++){
+    if(i<b.w)b.nbrs.push({x:x+i,y:y-1,fx:x+i,fy:y},{x:x+i,y:y+b.h,fx:x+i,fy:y+b.h-1});
+    if(i<b.h)b.nbrs.push({x:x-1,y:y+i,fx:x,fy:y+i},{x:x+b.w,y:y+i,fx:x+b.w-1,fy:y+i});
+  }
+  b.nbrs=b.nbrs.filter(p=>p.x>=0&&p.y>=0&&p.x<W&&p.y<H);
+  bldList.push(b);
+  return b;
+}
+function removeBld(b){
+  for(let dy=0;dy<b.h;dy++)for(let dx=0;dx<b.w;dx++)bld[(b.y+dy)*W+b.x+dx]=null;
+  const i=bldList.indexOf(b);if(i>=0)bldList.splice(i,1);
+  if(!DEV())refundCost(BCOST[b.kind]);
+  let lost=0;
+  for(const inv of allInvs(b)){
+    for(const s of inv){if(s.t)lost+=invAdd(player.slots,s.t,s.n);}
+  }
+  if(sheet&&sheet.b===b)closeSheet();
+  toast(lost?'持ち物に入りきらなかった分は失われました':NAMES[b.kind]+'を撤去'+(DEV()?'':'('+costText(BCOST[b.kind])+'返却)'));
+}
+// 素材tを受け取る入力欄(材料ポート → 燃料 の順)。受け取れなければnull
+function portFor(b,t){
+  const def=MACHINES[b.kind];
+  if(def.type==='storage')return b.inv;
+  if(def.type==='site'||def.type==='buyer')return null;
+  const i=Object.keys(RECIPES[b.recipe].in).indexOf(t);
+  if(i>=0)return b.ins[i];
+  if(def.fuel&&t===def.fuel)return b.fuel;
+  return null;
+}
+function accepts(b,t){
+  if(b.kind==='site')return stageNeed(t)>0;       // 建設現場: 今の段階で必要な分だけ受け取る
+  const p=portFor(b,t);return !!p&&invRoom(p,t)>0;
+}
+function receive(b,t){if(b.kind==='site'){deliver(t,1);return;}invAdd(portFor(b,t),t,1);}
+function eject(b,inv){
+  if(!inv.some(s=>s.t))return;
+  const n=b.nbrs.length;
+  for(let k=0;k<n;k++){
+    const nb=b.nbrs[(b.ejRR+k)%n];
+    const c=conv[nb.y*W+nb.x];
+    if(!c||c.bridge||c.item||feedsInto(c,b))continue;
+    const t=invPopAny(inv);
+    c.item={t,tk:tickNo,fx:nb.fx,fy:nb.fy};
+    b.ejRR=(b.ejRR+k+1)%n;
+    return;
+  }
+}
+// 統一の生産処理: 材料がそろったら消費 → yield個を every 秒ごとに1個ずつ出力(burn指定時は燃料1個で burn 秒稼働)
+function updateBld(b){
+  const def=MACHINES[b.kind];
+  if(def.type==='site')return;
+  if(def.type==='buyer'){      // 自動購入: 出力に空きがあれば every 秒ごとに店の価格で1個購入(資金不足なら待機)
+    b.working=false;
+    const price=BUY[b.item];
+    if(price&&invRoom(b.out,b.item)>0){
+      if(b.cd<def.every)b.cd++;
+      if(b.cd>=def.every){
+        if(player.money>=price){player.money-=price;invAdd(b.out,b.item,1);b.cd=0;b.working=true;}
+      }else b.working=true;
+    }
+    eject(b,b.out);
+    return;
+  }
+  if(def.type==='storage'){eject(b,b.inv);return;}
+  const r=RECIPES[b.recipe],keys=Object.keys(r.in);
+  if(b.remain<=0&&keys.every((k,i)=>invCount(b.ins[i],k)>=r.in[k])){
+    keys.forEach((k,i)=>invTake(b.ins[i],k,r.in[k]));
+    b.remain=r.yield;b.cd=0;
+  }
+  b.working=false;
+  if(b.remain>0&&invRoom(b.out,r.out)>0){
+    let power=true;
+    if(r.burn){
+      if(b.burn<=0&&invTake(b.fuel,def.fuel,1))b.burn=r.burn;
+      power=b.burn>0;
+      if(power)b.burn--;
+    }
+    if(power){
+      b.working=true;b.cd++;
+      if(b.cd>=r.every){invAdd(b.out,r.out,1);b.remain--;b.cd=0;}
+    }
+  }
+  eject(b,b.out);
+}
+// 進捗(0〜1): 多数出力型は残数、1個出力型は経過時間
+function progOf(b){
+  const r=RECIPES[b.recipe];
+  return r.yield>1?b.remain/r.yield:(b.remain>0?Math.min(1,b.cd/r.every):0);
+}
+// レシピ切替。生産中(多数出力型)は不可。入力素材が変わるときは入力欄の旧素材(加工中の分も)を持ち物へ戻す
+function setBuyerItem(b,k){if(!BUY[k]||!isUnlocked(ITEMS[k]))return;b.item=k;b.cd=0;}
+function changeRecipe(b,rid){
+  const def=MACHINES[b.kind],o=RECIPES[b.recipe],n=RECIPES[rid];
+  if(def.type!=='machine'||!n||!def.recipes.includes(rid)||b.recipe===rid||!isUnlocked(n))return false;
+  if(b.remain>0&&o.yield>1){toast('生産中は切り替えできません(完了までお待ちください)');return false;}
+  const inprog=b.remain>0,ok=Object.keys(o.in),nk=Object.keys(n.in);
+  const plan=ok.map((item,i)=>({i,item,same:nk[i]===item,held:invCount(b.ins[i],item),refund:inprog?o.in[item]:0}));
+  const need={};
+  for(const p of plan)if(!p.same){const q=p.held+p.refund;if(q)need[p.item]=(need[p.item]||0)+q;}
+  for(const item in need)if(need[item]>invRoom(player.slots,item)){toast('入力の'+ITEM_NAME[item]+'を持ち物に戻せません(空きが足りません)');return false;}
+  for(const p of plan){
+    if(p.same){if(p.refund)invAdd(b.ins[p.i],p.item,p.refund);}
+    else{invTake(b.ins[p.i],p.item,p.held);const q=p.held+p.refund;if(q)invAdd(player.slots,p.item,q);}
+  }
+  b.remain=0;b.cd=0;b.recipe=rid;
+  return true;
+}
+
+/* ================= ティック ================= */
+function tick(){
+  tickNo++;
+  for(let i=convList.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;const t=convList[i];convList[i]=convList[j];convList[j]=t;}
+  for(const c of convList)resolve(c);
+  for(const c of convList){if(c.item&&c.item.tk!==tickNo){c.item.fx=c.x;c.item.fy=c.y;}}
+  for(const b of bldList)updateBld(b);
+}
+
+/* ================= 入力状態 ================= */
+let tool='pan';
+const pendConv=new Map();     // idx -> {x,y,outs,auto}
+let pendBld=null;             // {x,y}
+let defDir=1;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const inBounds=(x,y)=>x>=0&&y>=0&&x<W&&y<H;
+
+function setTool(t){
+  if(BTOOLS.includes(t)&&!isUnlocked(MACHINES[t])){toast(NAMES[t]+'は第'+MACHINES[t].stage+'段階で解放されます');return;}
+  tool=t;pendConv.clear();pendBld=null;
+  refreshUI();
+}
+function pendCost(){let n=0;for(const e of pendConv.values())if(!conv[e.y*W+e.x])n++;return n;}
+function bldProblem(){
+  const p=pendBld;if(!p)return null;
+  const def=MACHINES[tool];
+  for(let dy=0;dy<def.h;dy++)for(let dx=0;dx<def.w;dx++){
+    const i=(p.y+dy)*W+p.x+dx,c=conv[i];
+    if(bld[i])return '他の設備と重なっています';
+    if(c&&!(def.type==='belt'&&!c.sorter&&!c.bridge))return '他の設備と重なっています';   // 仕分け機・橋は通常コンベアの上に置き換え可
+  }
+  if(!DEV()&&!canAfford(BCOST[tool]))return '材料が足りません('+costText(BCOST[tool])+')';
+  return null;
+}
+function stepPath(a,b){
+  const dx=b.x-a.x,dy=b.y-a.y;
+  const d=dy===-1?0:dx===1?1:dy===1?2:3;
+  const ia=a.y*W+a.x,ib=b.y*W+b.x;
+  if(!bld[ia]){
+    let e=pendConv.get(ia);
+    if(!e){const w=conv[ia];e={x:a.x,y:a.y,outs:w?w.outs.slice():[],auto:null};pendConv.set(ia,e);}
+    if(e.auto){e.outs=[];e.auto=null;}
+    if(!e.outs.includes(d))e.outs.push(d);
+  }
+  if(!bld[ib]&&!conv[ib]&&!pendConv.has(ib))pendConv.set(ib,{x:b.x,y:b.y,outs:[d],auto:'fwd'});
+}
+function confirmPending(){
+  if(tool==='conv'){
+    if(!pendConv.size)return;
+    const cost=pendCost();
+    if(!DEV()&&cost>invCount(player.slots,'lumber')){toast('木材が足りません(必要 '+cost+')');return;}
+    if(!DEV())invTake(player.slots,'lumber',cost);
+    for(const e of pendConv.values()){
+      const c=conv[e.y*W+e.x];
+      if(c){if(!c.sorter&&!c.bridge){for(const d of e.outs)if(!c.outs.includes(d))c.outs.push(d);}}
+      else addConv(e.x,e.y,e.outs);
+    }
+    pendConv.clear();
+  }else if(pendBld&&BTOOLS.includes(tool)){
+    const pr=bldProblem();
+    if(pr){toast(pr);return;}
+    if(!DEV())payCost(BCOST[tool]);
+    if(MACHINES[tool].type==='belt'){
+      placeBelt(tool,pendBld.x,pendBld.y);
+      if(tool==='sorter')toast('仕分け機を設置しました。タップして素材を指定できます');
+    }else addBld(tool,pendBld.x,pendBld.y);
+    pendBld=null;
+  }
+  refreshUI();
+}
+function cancelPending(){pendConv.clear();pendBld=null;refreshUI();}
+function rotateDef(){
+  defDir=(defDir+1)%4;
+  for(const e of pendConv.values())if(e.auto==='def')e.outs=[defDir];
+  refreshUI();
+}
+function eraseAt(c,down){
+  if(!c||!inBounds(c.x,c.y))return;
+  const i=c.y*W+c.x,cc=conv[i],b=bld[i];
+  if(cc){
+    const kind=cc.sorter?'sorter':cc.bridge?'bridge':null;
+    removeConv(cc);
+    if(!DEV()){if(kind)refundCost(BCOST[kind]);else invAdd(player.slots,'lumber',CFG.COST.conveyor);}
+    for(const it of (cc.bridge?cc.lanes.map(l=>l.item):[cc.item]))if(it)invAdd(player.slots,it.t,1);
+    refreshUI();
+  }else if(b&&down){if(b.kind==='site'){toast('建設現場は撤去できません');return;}removeBld(b);refreshUI();}
+}
+
+/* ================= 描画 ================= */
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let cw=0,ch=0,dpr=1;
+const cam={x:0,y:0,z:1};
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);cw=innerWidth;ch=innerHeight;
+  cv.width=Math.round(cw*dpr);cv.height=Math.round(ch*dpr);cv.style.width=cw+'px';cv.style.height=ch+'px';
+}
+function clampCam(){
+  const vw=cw/cam.z,vh=ch/cam.z;
+  cam.x=clamp(cam.x,-vw*.6,W*CS-vw*.4);
+  cam.y=clamp(cam.y,-vh*.6,H*CS-vh*.4);
+}
+function centerCam(){
+  cam.z=clamp(cw/(14*CS),.5,2);
+  cam.x=W*CS/2-cw/cam.z/2;cam.y=H*CS/2-ch/cam.z/2;
+}
+function cellAt(sx,sy){
+  const wx=sx/cam.z+cam.x,wy=sy/cam.z+cam.y;
+  return {x:Math.floor(wx/CS),y:Math.floor(wy/CS)};
+}
+
+function drawItem(t,cx,cy,k=1){
+  if(t==='log'){
+    ctx.fillStyle='#8b5e34';ctx.strokeStyle='#4a2f16';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.arc(cx,cy,6.5*k,0,7);ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#c99a62';ctx.beginPath();ctx.arc(cx,cy,3.2*k,0,7);ctx.stroke();
+  }else if(t==='iron_ore'){
+    ctx.fillStyle='#7a4f3f';ctx.strokeStyle='#3a2219';ctx.lineWidth=1.2*k;
+    ctx.beginPath();
+    for(let i=0;i<7;i++){const a=i*Math.PI*2/7+.4,rr=7.5*k*(i%2?.82:1);ctx.lineTo(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr);}
+    ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.fillStyle='#d4763a';
+    ctx.fillRect(cx-3*k,cy-3*k,2.4*k,2.4*k);ctx.fillRect(cx+1.5*k,cy+0.5*k,2.4*k,2.4*k);ctx.fillRect(cx-1*k,cy+3*k,2*k,2*k);
+  }else if(t==='iron'){
+    ctx.fillStyle='#a9b8ca';ctx.strokeStyle='#4c5a6b';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.moveTo(cx-7*k,cy+4*k);ctx.lineTo(cx+7*k,cy+4*k);ctx.lineTo(cx+5*k,cy-4*k);ctx.lineTo(cx-5*k,cy-4*k);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#e4ecf5';ctx.beginPath();ctx.moveTo(cx-4*k,cy-2*k);ctx.lineTo(cx+4*k,cy-2*k);ctx.stroke();
+  }else if(t==='iron_plate'){
+    ctx.fillStyle='#8fa2b8';ctx.strokeStyle='#44546a';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-7.5*k,cy-5*k,15*k,10*k);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#2f3b4b';
+    ctx.fillRect(cx-6*k,cy-3.8*k,1.8*k,1.8*k);ctx.fillRect(cx+4.2*k,cy-3.8*k,1.8*k,1.8*k);
+    ctx.fillRect(cx-6*k,cy+2*k,1.8*k,1.8*k);ctx.fillRect(cx+4.2*k,cy+2*k,1.8*k,1.8*k);
+  }else if(t==='iron_rod'){
+    ctx.fillStyle='#9db0c6';ctx.strokeStyle='#44546a';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-8*k,cy-2*k,16*k,4*k);ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#e4ecf5';ctx.beginPath();ctx.moveTo(cx-6*k,cy-0.6*k);ctx.lineTo(cx+6*k,cy-0.6*k);ctx.stroke();
+  }else if(t==='rock'||t==='stone'){
+    const r=(t==='rock'?7.5:5)*k;
+    ctx.fillStyle=t==='rock'?'#7d8794':'#aab2bd';ctx.strokeStyle='#3d444d';ctx.lineWidth=1.2*k;
+    ctx.beginPath();
+    for(let i=0;i<7;i++){const a=i*Math.PI*2/7+.4,rr=r*(i%2?.82:1);ctx.lineTo(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr);}
+    ctx.closePath();ctx.fill();ctx.stroke();
+  }else if(t==='stone_block'){
+    ctx.fillStyle='#c9ccd1';ctx.strokeStyle='#5d636c';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-7*k,cy-5.5*k,14*k,11*k);ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#8e949d';ctx.beginPath();ctx.moveTo(cx-7*k,cy);ctx.lineTo(cx+7*k,cy);ctx.moveTo(cx,cy-5.5*k);ctx.lineTo(cx,cy);ctx.stroke();
+  }else if(t==='plank'){
+    ctx.fillStyle='#efd9a8';ctx.strokeStyle='#9a7b3e';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-7.5*k,cy-5*k,15*k,10*k);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx-5*k,cy-1.5*k);ctx.lineTo(cx+5*k,cy-1.5*k);ctx.moveTo(cx-5*k,cy+2*k);ctx.lineTo(cx+5*k,cy+2*k);ctx.stroke();
+  }else if(t==='stick'){
+    ctx.fillStyle='#b98a4e';ctx.strokeStyle='#6e4d22';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-8*k,cy-2*k,16*k,4*k);ctx.fill();ctx.stroke();
+  }else if(t==='lumber'){
+    ctx.fillStyle='#d8b170';ctx.strokeStyle='#8a6a35';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-7*k,cy-4*k,14*k,8*k);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx-5*k,cy);ctx.lineTo(cx+5*k,cy);ctx.stroke();
+  }else if(t==='gold'){
+    ctx.fillStyle='#e0b83a';ctx.strokeStyle='#7a5f12';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.moveTo(cx-7*k,cy+4*k);ctx.lineTo(cx+7*k,cy+4*k);ctx.lineTo(cx+5*k,cy-4*k);ctx.lineTo(cx-5*k,cy-4*k);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#fff0a8';ctx.beginPath();ctx.moveTo(cx-4*k,cy-2*k);ctx.lineTo(cx+4*k,cy-2*k);ctx.stroke();
+  }else if(t==='gold_leaf'){
+    ctx.fillStyle='#f2d36b';ctx.strokeStyle='#9a7a1c';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-5.5*k,cy-5.5*k,11*k,11*k);ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#fff6c8';ctx.beginPath();ctx.moveTo(cx-3.5*k,cy+3*k);ctx.lineTo(cx+3*k,cy-3.5*k);ctx.stroke();
+  }else if(t==='statue'){
+    ctx.fillStyle='#aeb5bf';ctx.strokeStyle='#4a5260';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.arc(cx,cy-4*k,3*k,0,7);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx-5*k,cy+6*k);ctx.lineTo(cx-3*k,cy-1*k);ctx.lineTo(cx+3*k,cy-1*k);ctx.lineTo(cx+5*k,cy+6*k);ctx.closePath();ctx.fill();ctx.stroke();
+  }else if(t==='castle_gate'){
+    ctx.fillStyle='#6b4f3a';ctx.strokeStyle='#2f2219';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-7*k,cy-6.5*k,14*k,13*k);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#23282f';ctx.beginPath();ctx.moveTo(cx-3.5*k,cy+6.5*k);ctx.lineTo(cx-3.5*k,cy-1*k);ctx.arc(cx,cy-1*k,3.5*k,Math.PI,0);ctx.lineTo(cx+3.5*k,cy+6.5*k);ctx.closePath();ctx.fill();
+    ctx.strokeStyle='#8aa0b8';ctx.beginPath();ctx.moveTo(cx-7*k,cy-3*k);ctx.lineTo(cx+7*k,cy-3*k);ctx.stroke();
+  }else if(t==='tower_unit'){
+    ctx.fillStyle='#a8977f';ctx.strokeStyle='#5a4d3b';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-4.5*k,cy-3*k,9*k,10*k);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#7b4a3a';ctx.beginPath();ctx.moveTo(cx-6.5*k,cy-3*k);ctx.lineTo(cx,cy-9*k);ctx.lineTo(cx+6.5*k,cy-3*k);ctx.closePath();ctx.fill();ctx.stroke();
+  }else if(t==='roof_unit'){
+    ctx.fillStyle='#7b4a3a';ctx.strokeStyle='#3b2118';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.moveTo(cx-8*k,cy+5*k);ctx.lineTo(cx,cy-6*k);ctx.lineTo(cx+8*k,cy+5*k);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#b9805f';ctx.beginPath();ctx.moveTo(cx-4*k,cy+5*k);ctx.lineTo(cx,cy-1*k);ctx.lineTo(cx+4*k,cy+5*k);ctx.stroke();
+  }else if(t==='keep_unit'){
+    ctx.fillStyle='#c2b49b';ctx.strokeStyle='#6b5d49';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-6*k,cy-1*k,12*k,8*k);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#7b4a3a';ctx.beginPath();ctx.moveTo(cx-8*k,cy-1*k);ctx.lineTo(cx,cy-8*k);ctx.lineTo(cx+8*k,cy-1*k);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.fillStyle='#e8c04a';ctx.beginPath();ctx.arc(cx,cy-8.5*k,1.6*k,0,7);ctx.fill();
+  }else if(t==='golden_shachi'){
+    ctx.fillStyle='#e8c04a';ctx.strokeStyle='#7a5f12';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.moveTo(cx-6*k,cy+6*k);ctx.quadraticCurveTo(cx-8*k,cy-1*k,cx-2*k,cy-3*k);ctx.quadraticCurveTo(cx+4*k,cy-4*k,cx+2*k,cy-8*k);ctx.quadraticCurveTo(cx+8*k,cy-5*k,cx+6*k,cy+1*k);ctx.quadraticCurveTo(cx+3*k,cy+5*k,cx-6*k,cy+6*k);ctx.closePath();ctx.fill();ctx.stroke();
+  }else if(t==='steel'){
+    ctx.fillStyle='#5f7186';ctx.strokeStyle='#2c3846';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.moveTo(cx-7*k,cy+4*k);ctx.lineTo(cx+7*k,cy+4*k);ctx.lineTo(cx+5*k,cy-4*k);ctx.lineTo(cx-5*k,cy-4*k);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#a9bbd0';ctx.beginPath();ctx.moveTo(cx-4*k,cy-2*k);ctx.lineTo(cx+4*k,cy-2*k);ctx.stroke();
+  }else if(t==='steel_plate'){
+    ctx.fillStyle='#4d5d70';ctx.strokeStyle='#222c38';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-7.5*k,cy-5*k,15*k,10*k);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#a9bbd0';ctx.fillRect(cx-6*k,cy-3.8*k,1.8*k,1.8*k);ctx.fillRect(cx+4.2*k,cy-3.8*k,1.8*k,1.8*k);ctx.fillRect(cx-6*k,cy+2*k,1.8*k,1.8*k);ctx.fillRect(cx+4.2*k,cy+2*k,1.8*k,1.8*k);
+  }else if(t==='wall_panel'){
+    ctx.fillStyle='#b3a28a';ctx.strokeStyle='#6b5d49';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-7.5*k,cy-6*k,15*k,12*k);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx-7.5*k,cy);ctx.lineTo(cx+7.5*k,cy);ctx.moveTo(cx-2*k,cy-6*k);ctx.lineTo(cx-2*k,cy);ctx.moveTo(cx+2.5*k,cy);ctx.lineTo(cx+2.5*k,cy+6*k);ctx.stroke();
+  }else if(t==='window_unit'){
+    ctx.fillStyle='#6f8299';ctx.strokeStyle='#2c3846';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-6.5*k,cy-6.5*k,13*k,13*k);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#9fd3e6';ctx.fillRect(cx-4.5*k,cy-4.5*k,9*k,9*k);
+    ctx.strokeStyle='#6f8299';ctx.beginPath();ctx.moveTo(cx,cy-4.5*k);ctx.lineTo(cx,cy+4.5*k);ctx.moveTo(cx-4.5*k,cy);ctx.lineTo(cx+4.5*k,cy);ctx.stroke();
+  }else if(t==='beam'){
+    ctx.fillStyle='#a77b4a';ctx.strokeStyle='#5e4122';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-8*k,cy-3*k,16*k,6*k);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#6f8299';ctx.fillRect(cx-5*k,cy-3*k,1.8*k,6*k);ctx.fillRect(cx+3.2*k,cy-3*k,1.8*k,6*k);
+  }else if(t==='brick'){
+    ctx.fillStyle='#b0523a';ctx.strokeStyle='#5a2a1d';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-7.5*k,cy-4.5*k,15*k,9*k);ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#d9a08d';ctx.beginPath();ctx.moveTo(cx-7.5*k,cy);ctx.lineTo(cx+7.5*k,cy);ctx.moveTo(cx,cy-4.5*k);ctx.lineTo(cx,cy);ctx.stroke();
+  }else if(t==='roof_tile'){
+    ctx.fillStyle='#c0643c';ctx.strokeStyle='#6a321c';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.moveTo(cx-7*k,cy+4.5*k);ctx.quadraticCurveTo(cx,cy-9*k,cx+7*k,cy+4.5*k);ctx.closePath();ctx.fill();ctx.stroke();
+  }else if(t==='glass'){
+    ctx.fillStyle='rgba(159,211,230,.75)';ctx.strokeStyle='#4f7f93';ctx.lineWidth=1.2*k;
+    ctx.beginPath();ctx.rect(cx-6*k,cy-6*k,12*k,12*k);ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#e8f6fb';ctx.beginPath();ctx.moveTo(cx-3.5*k,cy+3*k);ctx.lineTo(cx+3*k,cy-3.5*k);ctx.stroke();
+  }else{   // 定義だけ追加された素材の簡易表示(色付きの角丸四角)
+    ctx.fillStyle=(ITEMS[t]&&ITEMS[t].color)||'#888';ctx.strokeStyle='#14171b';ctx.lineWidth=1.2*k;
+    ctx.beginPath();
+    if(ITEMS[t]&&ITEMS[t].buy){for(let i=0;i<7;i++){const a=i*Math.PI*2/7+.4,rr=7*k*(i%2?.82:1);ctx.lineTo(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr);}ctx.closePath();}   // 一次資源は岩のような多角形
+    else ctx.rect(cx-6*k,cy-6*k,12*k,12*k);
+    ctx.fill();ctx.stroke();
+  }
+}
+function drawSorterBody(x,y,fwd,filter,mode){
+  const px=x*CS,py=y*CS,m=CS/2;
+  ctx.save();
+  if(mode)ctx.globalAlpha=.8;
+  ctx.fillStyle=mode===0?'#27322b':mode===1?'#1c4642':'#4f211e';
+  ctx.fillRect(px+1,py+1,CS-2,CS-2);
+  ctx.strokeStyle=mode===2?'#e2564a':'#8fd18a';ctx.lineWidth=1.5;ctx.strokeRect(px+2,py+2,CS-4,CS-4);
+  const lane=(d,col)=>{
+    ctx.fillStyle=col;
+    if(DX[d]===1)ctx.fillRect(px+m,py+m-4,m-2,8);
+    else if(DX[d]===-1)ctx.fillRect(px+2,py+m-4,m-2,8);
+    else if(DY[d]===1)ctx.fillRect(px+m-4,py+m,8,m-2);
+    else ctx.fillRect(px+m-4,py+2,8,m-2);
+  };
+  lane((fwd+3)%4,'#3c4a40');lane((fwd+1)%4,'#3c4a40');lane(fwd,'#8fd18a');
+  ctx.fillStyle='#14171b';ctx.beginPath();ctx.arc(px+m,py+m,7,0,7);ctx.fill();
+  if(filter)drawItem(filter,px+m,py+m,.55);
+  ctx.save();ctx.translate(px+m+DX[fwd]*(m-6),py+m+DY[fwd]*(m-6));ctx.rotate(fwd*Math.PI/2);
+  ctx.fillStyle='#e8a33d';ctx.beginPath();ctx.moveTo(-3,2);ctx.lineTo(0,-3);ctx.lineTo(3,2);ctx.closePath();ctx.fill();ctx.restore();
+  ctx.restore();
+}
+function drawBridgeBody(x,y,mode){
+  const px=x*CS,py=y*CS,m=CS/2;
+  ctx.save();
+  if(mode)ctx.globalAlpha=.8;
+  ctx.fillStyle=mode===0?'#2a2e35':mode===1?'#1c4642':'#4f211e';
+  ctx.fillRect(px+1,py+1,CS-2,CS-2);
+  ctx.fillStyle='#3b414c';ctx.fillRect(px+m-5,py+1,10,CS-2);
+  ctx.fillStyle='#4f586a';ctx.fillRect(px+1,py+m-5,CS-2,10);
+  ctx.strokeStyle='#9db0c6';ctx.lineWidth=1.5;ctx.strokeRect(px+1.5,py+m-5,CS-3,10);
+  ctx.fillStyle='#9db0c6';ctx.fillRect(px+4,py+m+5,3,5);ctx.fillRect(px+CS-7,py+m+5,3,5);
+  ctx.restore();
+}
+function drawConvBody(x,y,outs,mode){
+  const px=x*CS,py=y*CS,m=CS/2;
+  ctx.save();
+  if(mode)ctx.globalAlpha=.8;
+  ctx.fillStyle=mode===0?'#2a2e35':mode===1?'#1c4642':'#4f211e';
+  ctx.fillRect(px+1,py+1,CS-2,CS-2);
+  ctx.fillStyle=mode===0?'#3b414c':mode===1?'#2b7a73':'#8a3a34';
+  ctx.fillRect(px+m-6,py+m-6,12,12);
+  for(const d of outs){
+    if(DX[d]===1)ctx.fillRect(px+m,py+m-6,m,12);
+    else if(DX[d]===-1)ctx.fillRect(px,py+m-6,m,12);
+    else if(DY[d]===1)ctx.fillRect(px+m-6,py+m,12,m);
+    else ctx.fillRect(px+m-6,py,12,m);
+  }
+  if(cam.z>=.45){
+    const p=mode?.5:tf;
+    ctx.strokeStyle=mode===2?'#ff9d94':'#e8a33d';ctx.lineWidth=1.6;
+    for(const d of outs){
+      const s=p*m;
+      ctx.save();
+      ctx.translate(px+m+DX[d]*s,py+m+DY[d]*s);ctx.rotate(d*Math.PI/2);
+      ctx.globalAlpha*=Math.sin(Math.PI*p)*.9;
+      ctx.beginPath();ctx.moveTo(-4,2);ctx.lineTo(0,-2);ctx.lineTo(4,2);ctx.stroke();
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+function drawStorage(b){
+  const def=MACHINES[b.kind],x=b.x*CS,y=b.y*CS,Sw=b.w*CS,Sh=b.h*CS;
+  ctx.fillStyle='#2b3634';ctx.fillRect(x+1,y+1,Sw-2,Sh-2);
+  ctx.strokeStyle=def.color;ctx.lineWidth=2;ctx.strokeRect(x+2,y+2,Sw-4,Sh-4);
+  const n=b.inv.length,cols=Math.min(n,b.w===2?2:3),rows=Math.ceil(n/cols);
+  const gx=6,top=16,bot=8,gap=4;
+  const bw=(Sw-2*gx-(cols-1)*gap)/cols,bh=(Sh-top-bot-(rows-1)*gap)/rows;
+  for(let i=0;i<n;i++){
+    const bx=x+gx+(i%cols)*(bw+gap),by=y+top+Math.floor(i/cols)*(bh+gap);
+    ctx.fillStyle='#161a19';ctx.fillRect(bx,by,bw,bh);
+    const s=b.inv[i];
+    if(s.t){
+      drawItem(s.t,bx+bw/2,by+bh/2-3,Math.min(.9,bw/22,bh/28));
+      ctx.fillStyle='#e8a33d';ctx.font='700 9px sans-serif';ctx.textAlign='center';ctx.fillText(String(s.n),bx+bw/2,by+bh-2);
+    }
+  }
+  ctx.fillStyle=def.color;ctx.font='600 8px sans-serif';ctx.textAlign='left';ctx.fillText(def.name,x+6,y+12);
+}
+// 機械ごとの中央アート(任意)。無い機械は汎用の歯車(_gear)
+const ART={
+  large_assembler(b,cx,cy,S){
+    const R=S*.2;
+    for(const [ox,oy,r,dir] of [[-S*.16,-S*.06,R,1],[S*.2,S*.08,R*.7,-1]]){
+      ctx.save();ctx.translate(cx+ox,cy+oy-4);ctx.rotate(b.ang*dir);
+      ctx.fillStyle='#b08a5a';ctx.beginPath();
+      for(let i=0;i<24;i++){const a=i*Math.PI/12,rad=(i%2)?r*.78:r;ctx.lineTo(Math.cos(a)*rad,Math.sin(a)*rad);}
+      ctx.closePath();ctx.fill();
+      ctx.fillStyle='#352f26';ctx.beginPath();ctx.arc(0,0,r*.28,0,7);ctx.fill();
+      ctx.restore();
+    }
+  },
+  blast_furnace(b,cx,cy,S){
+    const c=cy-4;
+    ctx.fillStyle='#55606e';ctx.beginPath();ctx.moveTo(cx-14,c+12);ctx.lineTo(cx-9,c-16);ctx.lineTo(cx+9,c-16);ctx.lineTo(cx+14,c+12);ctx.closePath();ctx.fill();
+    ctx.strokeStyle='#2c3846';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.fillStyle='#8aa0b8';ctx.fillRect(cx-12,c-4,24,2);ctx.fillRect(cx-10,c-11,20,2);
+    ctx.fillStyle='#1a1412';ctx.fillRect(cx-6,c+2,12,10);
+    if(b.burn>0){
+      const fl=.6+.4*Math.sin(performance.now()/80);
+      ctx.fillStyle=`rgba(255,${110+Math.round(70*fl)},40,${(.6+.35*fl).toFixed(2)})`;ctx.fillRect(cx-5,c+4,10,8);
+    }
+  },
+  kiln(b,cx,cy,S){
+    const c=cy-4;
+    ctx.fillStyle='#6b3f32';ctx.beginPath();ctx.moveTo(cx-19,c+11);ctx.lineTo(cx-19,c-6);ctx.arc(cx,c-6,19,Math.PI,0);ctx.lineTo(cx+19,c+11);ctx.closePath();ctx.fill();
+    ctx.beginPath();ctx.moveTo(cx-9,c+11);ctx.lineTo(cx-9,c-2);ctx.arc(cx,c-2,9,Math.PI,0);ctx.lineTo(cx+9,c+11);ctx.closePath();
+    ctx.fillStyle='#1a1412';ctx.fill();
+    if(b.burn>0){
+      const fl=.6+.4*Math.sin(performance.now()/90);
+      ctx.fillStyle=`rgba(255,${120+Math.round(60*fl)},40,${(.55+.35*fl).toFixed(2)})`;ctx.fill();
+    }
+    ctx.strokeStyle='#3a2018';ctx.lineWidth=1.5;ctx.stroke();
+  },
+  sawmill(b,cx,cy,S){
+    const R=S*.25;
+    ctx.save();ctx.translate(cx,cy-3);ctx.rotate(b.ang);
+    ctx.fillStyle='#a5adb8';ctx.beginPath();
+    for(let i=0;i<24;i++){const a=i*Math.PI/12,r=i%2?R*.8:R;ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);}
+    ctx.closePath();ctx.fill();
+    ctx.fillStyle='#343942';ctx.beginPath();ctx.arc(0,0,R*.28,0,7);ctx.fill();
+    ctx.restore();
+  },
+  processor(b,cx,cy,S){
+    const R=S*.22;
+    ctx.save();ctx.translate(cx,cy-4);ctx.rotate(b.ang);
+    ctx.fillStyle='#c98a5a';ctx.beginPath();
+    for(let i=0;i<32;i++){const a=i*Math.PI/16,rad=(i%4<2)?R:R*.74;ctx.lineTo(Math.cos(a)*rad,Math.sin(a)*rad);}
+    ctx.closePath();ctx.fill();
+    ctx.fillStyle='#3a3431';ctx.beginPath();ctx.arc(0,0,R*.3,0,7);ctx.fill();
+    ctx.restore();
+  },
+  crusher(b,cx,cy,S){
+    const gap=5+Math.abs(Math.sin(b.ang))*7,my=cy-5;
+    ctx.fillStyle='#b4bcc7';
+    ctx.fillRect(cx-gap-9,my-11,9,22);
+    ctx.fillRect(cx+gap,my-11,9,22);
+    if(b.remain>0)drawItem(RECIPES[b.recipe].out,cx,my+4,.8);
+  },
+  smelter(b,cx,cy,S){
+    const fx=cx-12,fy=cy-15;
+    ctx.fillStyle='#1a1412';ctx.fillRect(fx,fy,24,22);
+    if(b.burn>0){
+      const fl=.6+.4*Math.sin(performance.now()/90);
+      ctx.fillStyle=`rgba(255,${120+Math.round(60*fl)},40,${(.55+.35*fl).toFixed(2)})`;
+      ctx.fillRect(fx+2,fy+4,20,16);
+    }
+    ctx.strokeStyle='#6b5a52';ctx.lineWidth=1.5;ctx.strokeRect(fx,fy,24,22);
+  },
+  _gear(b,cx,cy,S,def){
+    const R=S*.22;
+    ctx.save();ctx.translate(cx,cy-4);ctx.rotate(b.ang);
+    ctx.fillStyle=def.color;ctx.beginPath();
+    for(let i=0;i<32;i++){const a=i*Math.PI/16,rad=(i%4<2)?R:R*.74;ctx.lineTo(Math.cos(a)*rad,Math.sin(a)*rad);}
+    ctx.closePath();ctx.fill();
+    ctx.fillStyle=def.bg||'#33363b';ctx.beginPath();ctx.arc(0,0,R*.3,0,7);ctx.fill();
+    ctx.restore();
+  }
+};
+function drawSite(b){
+  const x=b.x*CS,y=b.y*CS,S=b.w*CS;
+  ctx.fillStyle='#22262c';ctx.fillRect(x+1,y+1,S-2,S-2);
+  ctx.strokeStyle='#e8a33d';ctx.lineWidth=2;ctx.strokeRect(x+2,y+2,S-4,S-4);
+  drawCastle(x+4,y+18,(S-8)/100);
+  ctx.fillStyle='#e8a33d';ctx.font='700 9px sans-serif';ctx.textAlign='left';
+  ctx.fillText('建設現場',x+8,y+14);
+  ctx.textAlign='right';ctx.fillText(game.done?'完成!':'第'+game.stage+'段階',x+S-8,y+14);
+  if(!game.done&&!curStage().wip){
+    ctx.fillStyle='#14171b';ctx.fillRect(x+8,y+S-12,S-16,5);
+    ctx.fillStyle='#e8a33d';ctx.fillRect(x+8,y+S-12,(S-16)*stageProgress(),5);
+  }
+}
+function drawBuyer(b){
+  const def=MACHINES[b.kind],x=b.x*CS,y=b.y*CS,S=b.w*CS,price=BUY[b.item]||0;
+  ctx.fillStyle='#2f2d26';ctx.fillRect(x+1,y+1,S-2,S-2);
+  ctx.strokeStyle=def.color;ctx.lineWidth=2;ctx.strokeRect(x+2,y+2,S-4,S-4);
+  const cy=y+S/2-5;
+  ctx.fillStyle='#e8c04a';ctx.beginPath();ctx.arc(x+S/2-15,cy,9,0,7);ctx.fill();
+  ctx.fillStyle='#2f2d26';ctx.font='700 11px sans-serif';ctx.textAlign='center';ctx.fillText('¥',x+S/2-15,cy+4);
+  ctx.strokeStyle='#8b8f98';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x+S/2-3,cy);ctx.lineTo(x+S/2+5,cy);ctx.lineTo(x+S/2+2,cy-3);ctx.moveTo(x+S/2+5,cy);ctx.lineTo(x+S/2+2,cy+3);ctx.stroke();
+  if(b.item)drawItem(b.item,x+S/2+16,cy,.9);
+  ctx.fillStyle='#14171b';ctx.fillRect(x+6,y+S-13,S-12,5);
+  const stalled=price&&b.cd>=def.every&&player.money<price;
+  ctx.fillStyle=stalled?'#e2564a':def.color;ctx.fillRect(x+6,y+S-13,(S-12)*Math.min(1,b.cd/def.every),5);
+  const oc=invCount(b.out,b.item);
+  if(oc){ctx.font='700 10px sans-serif';ctx.textAlign='right';ctx.fillStyle='#d5dae1';ctx.fillText(String(oc),x+S-6,y+13);}
+  ctx.fillStyle=def.color;ctx.font='600 8px sans-serif';ctx.textAlign='left';ctx.fillText(def.name,x+6,y+S-17);
+}
+function drawBld(b){
+  const def=MACHINES[b.kind];
+  if(def.type==='storage')return drawStorage(b);
+  if(def.type==='site')return drawSite(b);
+  if(def.type==='buyer')return drawBuyer(b);
+  const r=RECIPES[b.recipe],x=b.x*CS,y=b.y*CS,Sw=b.w*CS,Sh=b.h*CS;
+  ctx.fillStyle=def.bg||'#33363b';ctx.fillRect(x+1,y+1,Sw-2,Sh-2);
+  ctx.strokeStyle=def.color;ctx.lineWidth=2;ctx.strokeRect(x+2,y+2,Sw-4,Sh-4);
+  if(b.working)b.ang+=frameDt*(def.spin||.01);
+  (ART[b.kind]||ART._gear)(b,x+Sw/2,y+Sh/2,Math.min(Sw,Sh),def);
+  // 進捗バー
+  ctx.fillStyle='#14171b';ctx.fillRect(x+6,y+Sh-13,Sw-12,5);
+  ctx.fillStyle=def.color;ctx.fillRect(x+6,y+Sh-13,(Sw-12)*progOf(b),5);
+  // 数量: 左=入力 / 中=燃料 / 右=出力
+  ctx.font='700 10px sans-serif';
+  const ic=Object.keys(r.in).map((k,i)=>invCount(b.ins[i],k));
+  if(ic.some(v=>v>0)){ctx.textAlign='left';ctx.fillStyle='#d8b170';ctx.fillText(ic.join('/'),x+6,y+13);}
+  if(b.fuel){const fc=invCount(b.fuel,def.fuel);if(fc){ctx.textAlign='center';ctx.fillStyle='#d8b170';ctx.fillText(String(fc),x+Sw/2,y+13);}}
+  let oc=0;for(const s of b.out)if(s.t)oc+=s.n;
+  if(oc){ctx.textAlign='right';ctx.fillStyle='#d5dae1';ctx.fillText(String(oc),x+Sw-6,y+13);}
+  ctx.fillStyle=def.color;ctx.font='600 8px sans-serif';ctx.textAlign='left';
+  ctx.fillText(def.name+(def.recipes.length>1?' '+ITEM_NAME[r.out]:''),x+6,y+Sh-17);
+}
+
+function draw(){
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle='#0b0d10';ctx.fillRect(0,0,cv.width,cv.height);
+  const s=dpr*cam.z;
+  ctx.setTransform(s,0,0,s,-cam.x*s,-cam.y*s);
+  ctx.fillStyle='#171a1f';ctx.fillRect(0,0,W*CS,H*CS);
+  const x0=Math.max(0,Math.floor(cam.x/CS)),x1=Math.min(W,Math.ceil((cam.x+cw/cam.z)/CS));
+  const y0=Math.max(0,Math.floor(cam.y/CS)),y1=Math.min(H,Math.ceil((cam.y+ch/cam.z)/CS));
+  // グリッド
+  ctx.lineWidth=1/cam.z;
+  if(cam.z>=.6){
+    ctx.strokeStyle='rgba(255,255,255,.05)';ctx.beginPath();
+    for(let x=x0;x<=x1;x++){ctx.moveTo(x*CS,y0*CS);ctx.lineTo(x*CS,y1*CS);}
+    for(let y=y0;y<=y1;y++){ctx.moveTo(x0*CS,y*CS);ctx.lineTo(x1*CS,y*CS);}
+    ctx.stroke();
+  }
+  ctx.strokeStyle='rgba(232,163,61,.14)';ctx.beginPath();
+  for(let x=x0;x<=x1;x++)if(x%10===0){ctx.moveTo(x*CS,y0*CS);ctx.lineTo(x*CS,y1*CS);}
+  for(let y=y0;y<=y1;y++)if(y%10===0){ctx.moveTo(x0*CS,y*CS);ctx.lineTo(x1*CS,y*CS);}
+  ctx.stroke();
+  ctx.strokeStyle='#e8a33d';ctx.lineWidth=2/cam.z;ctx.strokeRect(0,0,W*CS,H*CS);
+
+  // コンベア本体
+  for(const c of convList){if(c.lane||c.x<x0||c.x>=x1||c.y<y0||c.y>=y1)continue;if(c.sorter)drawSorterBody(c.x,c.y,c.fwd,c.filter,0);else drawConvBody(c.x,c.y,c.outs,0);}
+  for(const br of bridgeList){if(br.x<x0||br.x>=x1||br.y<y0||br.y>=y1)continue;drawBridgeBody(br.x,br.y,0);}
+  // 建物
+  for(const b of bldList){if(b.x+b.w<x0||b.x>x1||b.y+b.h<y0||b.y>y1)continue;drawBld(b);}
+  // アイテム
+  for(const c of convList){
+    const it=c.item;if(!it||c.x<x0-1||c.x>x1||c.y<y0-1||c.y>y1)continue;
+    drawItem(it.t,(it.fx+(c.x-it.fx)*tf+.5)*CS,(it.fy+(c.y-it.fy)*tf+.5)*CS);
+  }
+  // ゴースト: コンベア
+  if(pendConv.size){
+    const bad=!DEV()&&pendCost()>invCount(player.slots,'lumber');
+    for(const e of pendConv.values()){const w=conv[e.y*W+e.x];if(w&&(w.sorter||w.bridge))continue;drawConvBody(e.x,e.y,e.outs,bad?2:1);}
+  }
+  // ゴースト: 建物
+  if(pendBld&&BTOOLS.includes(tool)){
+    const def=MACHINES[tool];
+    const bad=!!bldProblem();
+    if(def.type==='belt'){
+      if(tool==='sorter')drawSorterBody(pendBld.x,pendBld.y,defDir,null,bad?2:1);else drawBridgeBody(pendBld.x,pendBld.y,bad?2:1);
+    }else{
+      const stub=Object.assign({id:0,kind:tool,x:pendBld.x,y:pendBld.y,w:def.w,h:def.h,remain:0,cd:0,burn:0,working:false,ang:0},newMachineState(tool));
+      ctx.save();ctx.globalAlpha=.7;drawBld(stub);ctx.restore();
+    }
+    ctx.fillStyle=bad?'rgba(226,86,74,.35)':'rgba(79,209,197,.3)';
+    ctx.fillRect(pendBld.x*CS,pendBld.y*CS,def.w*CS,def.h*CS);
+    ctx.setLineDash([6,4]);ctx.strokeStyle=bad?'#e2564a':'#4fd1c5';ctx.lineWidth=2/cam.z;
+    ctx.strokeRect(pendBld.x*CS,pendBld.y*CS,def.w*CS,def.h*CS);ctx.setLineDash([]);
+  }
+}
+
+/* ================= 入力(ポインタ) ================= */
+const ptrs=new Map();
+let gest=null,pan=null,stroke=null;
+
+function zoomAt(sx,sy,nz){
+  nz=clamp(nz,.25,3);
+  const wx=sx/cam.z+cam.x,wy=sy/cam.z+cam.y;
+  cam.z=nz;cam.x=wx-sx/nz;cam.y=wy-sy/nz;clampCam();
+}
+function beginGesture(){
+  const [a,b]=[...ptrs.values()];
+  const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+  gest={d0:Math.hypot(a.x-b.x,a.y-b.y)||1,z0:cam.z,wx:mx/cam.z+cam.x,wy:my/cam.z+cam.y};
+}
+function updateGesture(){
+  const [a,b]=[...ptrs.values()];
+  const mx=(a.x+b.x)/2,my=(a.y+b.y)/2,d=Math.hypot(a.x-b.x,a.y-b.y);
+  const nz=clamp(gest.z0*d/gest.d0,.25,3);
+  cam.z=nz;cam.x=gest.wx-mx/nz;cam.y=gest.wy-my/nz;clampCam();
+}
+function setGhost(sx,sy){
+  const def=MACHINES[tool];
+  const wx=(sx/cam.z+cam.x)/CS,wy=(sy/cam.z+cam.y)/CS;
+  pendBld={x:clamp(Math.round(wx-def.w/2),0,W-def.w),y:clamp(Math.round(wy-def.h/2),0,H-def.h)};
+}
+function clampCell(c){return {x:clamp(c.x,0,W-1),y:clamp(c.y,0,H-1)};}
+function moveConv(c){
+  if(!stroke||!stroke.last)return;
+  c=clampCell(c);
+  let g=0;
+  while((stroke.last.x!==c.x||stroke.last.y!==c.y)&&g++<400){
+    const dx=c.x-stroke.last.x,dy=c.y-stroke.last.y;
+    let nx=stroke.last.x,ny=stroke.last.y;
+    if(Math.abs(dx)>=Math.abs(dy))nx+=Math.sign(dx);else ny+=Math.sign(dy);
+    stepPath(stroke.last,{x:nx,y:ny});
+    stroke.last={x:nx,y:ny};
+  }
+}
+
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+cv.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.clientX,e.clientY,cam.z*Math.exp(-e.deltaY*.0015));},{passive:false});
+cv.addEventListener('pointerdown',e=>{
+  cv.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===2){beginGesture();pan=null;stroke=null;return;}
+  if(ptrs.size>2)return;
+  const forcePan=e.pointerType==='mouse'&&e.button!==0;
+  if(forcePan||tool==='pan'){
+    pan={sx:e.clientX,sy:e.clientY,cx:cam.x,cy:cam.y,moved:false,tap:tool==='pan'&&!forcePan};
+    return;
+  }
+  const c=cellAt(e.clientX,e.clientY);
+  if(tool==='conv'){
+    if(inBounds(c.x,c.y)){
+      const i=c.y*W+c.x;
+      if(!bld[i]&&!conv[i]&&!pendConv.has(i))pendConv.set(i,{x:c.x,y:c.y,outs:[defDir],auto:'def'});
+      stroke={last:c};
+    }else stroke={last:null};
+  }else if(tool==='erase'){
+    stroke={last:c};eraseAt(c,true);
+  }else{
+    setGhost(e.clientX,e.clientY);stroke={ghost:true};
+  }
+  refreshBar();
+});
+cv.addEventListener('pointermove',e=>{
+  const p=ptrs.get(e.pointerId);if(!p)return;
+  p.x=e.clientX;p.y=e.clientY;
+  if(gest&&ptrs.size>=2){updateGesture();return;}
+  if(pan){
+    const dx=e.clientX-pan.sx,dy=e.clientY-pan.sy;
+    if(!pan.moved&&Math.hypot(dx,dy)>8)pan.moved=true;
+    if(pan.moved){cam.x=pan.cx-dx/cam.z;cam.y=pan.cy-dy/cam.z;clampCam();}
+    return;
+  }
+  if(!stroke)return;
+  if(tool==='conv'){moveConv(cellAt(e.clientX,e.clientY));refreshBar();}
+  else if(tool==='erase'){
+    const c=cellAt(e.clientX,e.clientY);
+    if(!stroke.last||c.x!==stroke.last.x||c.y!==stroke.last.y){stroke.last=c;eraseAt(c,false);}
+  }else if(stroke.ghost){setGhost(e.clientX,e.clientY);refreshBar();}
+});
+function endPtr(e){
+  if(!ptrs.has(e.pointerId))return;
+  ptrs.delete(e.pointerId);
+  if(ptrs.size<2)gest=null;
+  if(pan&&!pan.moved&&pan.tap&&e.type==='pointerup'){
+    const c=cellAt(e.clientX,e.clientY);
+    if(inBounds(c.x,c.y)){const i=c.y*W+c.x,b=bld[i],cc=conv[i];if(b)openSheet(b.kind==='site'?{type:'stage'}:{type:'bld',b});else if(cc&&cc.sorter)openSheet({type:'sorter',c:cc});}
+  }
+  if(!ptrs.size){pan=null;stroke=null;}
+}
+cv.addEventListener('pointerup',endPtr);
+cv.addEventListener('pointercancel',endPtr);
+window.addEventListener('resize',()=>{resize();clampCam();});
+window.addEventListener('keydown',e=>{
+  if(e.key==='Enter')confirmPending();
+  else if(e.key==='Escape'){cancelPending();closeSheet();}
+  else if(e.key==='r'||e.key==='R')rotateDef();
+  else if(e.key.length===1&&e.key>='1'&&e.key<='9'){const kt=['pan','conv',...BTOOLS,'erase'][+e.key-1];if(kt)setTool(kt);}
+});
+
+/* ================= UI ================= */
+const $=id=>document.getElementById(id);
+function setHTML(el,h){if(el._h!==h){el._h=h;el.innerHTML=h;}}
+function setText(el,t){if(el.textContent!==t)el.textContent=t;}
+function icon(t){
+  if(t==='gold')return '<svg viewBox="0 0 24 24"><polygon points="2,18 22,18 18,6 6,6" fill="#e0b83a" stroke="#7a5f12" stroke-width="1.6"/><path d="M8 10h8" stroke="#fff0a8" stroke-width="1.4"/></svg>';
+  if(t==='gold_leaf')return '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1" fill="#f2d36b" stroke="#9a7a1c" stroke-width="1.6"/><path d="M8 16L16 8" stroke="#fff6c8" stroke-width="1.6"/></svg>';
+  if(t==='statue')return '<svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="4" fill="#aeb5bf" stroke="#4a5260" stroke-width="1.6"/><polygon points="5,21 8,12 16,12 19,21" fill="#aeb5bf" stroke="#4a5260" stroke-width="1.6"/></svg>';
+  if(t==='castle_gate')return '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1.5" fill="#6b4f3a" stroke="#2f2219" stroke-width="1.6"/><path d="M8 21V11a4 4 0 0 1 8 0v10Z" fill="#23282f"/><path d="M3 8h18" stroke="#8aa0b8" stroke-width="1.4"/></svg>';
+  if(t==='tower_unit')return '<svg viewBox="0 0 24 24"><rect x="7" y="10" width="10" height="12" fill="#a8977f" stroke="#5a4d3b" stroke-width="1.6"/><polygon points="4,10 12,2 20,10" fill="#7b4a3a" stroke="#5a4d3b" stroke-width="1.6"/></svg>';
+  if(t==='roof_unit')return '<svg viewBox="0 0 24 24"><polygon points="2,20 12,4 22,20" fill="#7b4a3a" stroke="#3b2118" stroke-width="1.6"/><path d="M7 20L12 12l5 8" fill="none" stroke="#b9805f" stroke-width="1.4"/></svg>';
+  if(t==='keep_unit')return '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" fill="#c2b49b" stroke="#6b5d49" stroke-width="1.6"/><polygon points="3,11 12,3 21,11" fill="#7b4a3a" stroke="#6b5d49" stroke-width="1.6"/><circle cx="12" cy="2.5" r="1.8" fill="#e8c04a"/></svg>';
+  if(t==='golden_shachi')return '<svg viewBox="0 0 24 24"><path d="M5 21Q2 13 9 10Q16 9 13 3Q21 7 19 14Q16 20 5 21Z" fill="#e8c04a" stroke="#7a5f12" stroke-width="1.6"/></svg>';
+  if(t==='steel')return '<svg viewBox="0 0 24 24"><polygon points="2,18 22,18 18,6 6,6" fill="#5f7186" stroke="#2c3846" stroke-width="1.6"/><path d="M8 10h8" stroke="#a9bbd0" stroke-width="1.4"/></svg>';
+  if(t==='steel_plate')return '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1.5" fill="#4d5d70" stroke="#222c38" stroke-width="1.6"/><circle cx="6.5" cy="8.5" r="1" fill="#a9bbd0"/><circle cx="17.5" cy="8.5" r="1" fill="#a9bbd0"/><circle cx="6.5" cy="15.5" r="1" fill="#a9bbd0"/><circle cx="17.5" cy="15.5" r="1" fill="#a9bbd0"/></svg>';
+  if(t==='wall_panel')return '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.5" fill="#b3a28a" stroke="#6b5d49" stroke-width="1.6"/><path d="M3 12h18M10 4v8M15 12v8" stroke="#6b5d49" stroke-width="1.2"/></svg>';
+  if(t==='window_unit')return '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1.5" fill="#6f8299" stroke="#2c3846" stroke-width="1.6"/><rect x="6" y="6" width="12" height="12" fill="#9fd3e6"/><path d="M12 6v12M6 12h12" stroke="#6f8299" stroke-width="1.4"/></svg>';
+  if(t==='beam')return '<svg viewBox="0 0 24 24"><rect x="2" y="8" width="20" height="8" rx="1.5" fill="#a77b4a" stroke="#5e4122" stroke-width="1.6"/><rect x="6" y="8" width="2.5" height="8" fill="#6f8299"/><rect x="15.5" y="8" width="2.5" height="8" fill="#6f8299"/></svg>';
+  if(t==='brick')return '<svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="1.5" fill="#b0523a" stroke="#5a2a1d" stroke-width="1.6"/><path d="M2 12h20M12 6v6" stroke="#d9a08d" stroke-width="1.2"/></svg>';
+  if(t==='roof_tile')return '<svg viewBox="0 0 24 24"><path d="M2 19Q12 -2 22 19Z" fill="#c0643c" stroke="#6a321c" stroke-width="1.6"/></svg>';
+  if(t==='glass')return '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5" fill="#9fd3e6" fill-opacity=".8" stroke="#4f7f93" stroke-width="1.6"/><path d="M8 16L16 8" stroke="#e8f6fb" stroke-width="1.6"/></svg>';
+  if(t==='stone_block')return '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1.5" fill="#c9ccd1" stroke="#5d636c" stroke-width="1.6"/><path d="M3 12h18M12 5v7" stroke="#8e949d" stroke-width="1.2"/></svg>';
+  if(t==='iron_plate')return '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1.5" fill="#8fa2b8" stroke="#44546a" stroke-width="1.6"/><circle cx="6.5" cy="8.5" r="1" fill="#2f3b4b"/><circle cx="17.5" cy="8.5" r="1" fill="#2f3b4b"/><circle cx="6.5" cy="15.5" r="1" fill="#2f3b4b"/><circle cx="17.5" cy="15.5" r="1" fill="#2f3b4b"/></svg>';
+  if(t==='iron_rod')return '<svg viewBox="0 0 24 24"><rect x="2" y="10" width="20" height="4" rx="1.5" fill="#9db0c6" stroke="#44546a" stroke-width="1.5"/></svg>';
+  if(t==='iron_ore')return '<svg viewBox="0 0 24 24"><polygon points="3,16 6,7 14,3 21,9 21,17 12,21" fill="#7a4f3f" stroke="#3a2219" stroke-width="1.6"/><rect x="8" y="9" width="3" height="3" fill="#d4763a"/><rect x="14" y="13" width="3" height="3" fill="#d4763a"/></svg>';
+  if(t==='iron')return '<svg viewBox="0 0 24 24"><polygon points="2,18 22,18 18,6 6,6" fill="#a9b8ca" stroke="#4c5a6b" stroke-width="1.6"/><path d="M8 10h8" stroke="#e4ecf5" stroke-width="1.4"/></svg>';
+  if(t==='rock')return '<svg viewBox="0 0 24 24"><polygon points="3,16 6,7 14,3 21,9 21,17 12,21" fill="#7d8794" stroke="#3d444d" stroke-width="1.6"/></svg>';
+  if(t==='stone')return '<svg viewBox="0 0 24 24"><polygon points="7,15 9,9 14,8 17,12 16,17 10,18" fill="#aab2bd" stroke="#3d444d" stroke-width="1.6"/></svg>';
+  if(t==='plank')return '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1.5" fill="#efd9a8" stroke="#9a7b3e" stroke-width="1.6"/><path d="M6 10h12M6 14h12" stroke="#b8974f" stroke-width="1"/></svg>';
+  if(t==='stick')return '<svg viewBox="0 0 24 24"><rect x="2" y="10" width="20" height="4" rx="1.5" fill="#b98a4e" stroke="#6e4d22" stroke-width="1.5"/></svg>';
+  return t==='log'
+   ?'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#8b5e34" stroke="#4a2f16" stroke-width="1.6"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="#c99a62" stroke-width="1.2"/><circle cx="12" cy="12" r="1.8" fill="#c99a62"/></svg>'
+   :t==='lumber'?'<svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="1.5" fill="#d8b170" stroke="#8a6a35" stroke-width="1.6"/><path d="M5 10.5h14M5 13.5h14" stroke="#a9843f" stroke-width="1"/></svg>'
+   :`<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="${(ITEMS[t]&&ITEMS[t].color)||'#888'}" stroke="#14171b" stroke-width="1.6"/></svg>`;
+}
+function bicon(k){
+  const c=BINFO[k].c;
+  const inner=k==='sawmill'?'<circle cx="12" cy="12" r="6.5" fill="#a5adb8"/><circle cx="12" cy="12" r="2" fill="#343942"/>'
+    :k==='smelter'?'<rect x="6" y="6" width="12" height="11" fill="#1a1412"/><rect x="8" y="10" width="8" height="6" fill="#ff8a3d"/>'
+    :k==='crusher'?'<rect x="5" y="6" width="5" height="12" fill="#b4bcc7"/><rect x="14" y="6" width="5" height="12" fill="#b4bcc7"/>'
+    :k==='processor'?'<circle cx="12" cy="12" r="6.5" fill="#c98a5a"/><circle cx="12" cy="12" r="2.2" fill="#3a3431"/>'
+    :MACHINES[k].type==='storage'?'<rect x="6" y="7" width="5" height="10" fill="#161a19"/><rect x="13" y="7" width="5" height="10" fill="#161a19"/>'
+    :`<circle cx="12" cy="12" r="6.5" fill="${c}"/><circle cx="12" cy="12" r="2.2" fill="#2b2f36"/>`;
+  return `<svg viewBox="0 0 24 24"><rect x="1.5" y="1.5" width="21" height="21" rx="2" fill="#2b2f36" stroke="${c}" stroke-width="2"/>${inner}</svg>`;
+}
+let toastTimer=0;
+function toast(msg){
+  const el=$('toast');el.textContent=msg;el.hidden=false;
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>{el.hidden=true;},2200);
+}
+function slotsHTML(inv,k){
+  return '<div class="slots">'+inv.map((s,i)=>
+    `<button class="slot${s.t?'':' empty'}" data-k="${k}" data-i="${i}">${s.t?icon(s.t)+`<span class="n">${s.n}</span>`:''}</button>`).join('')+'</div>';
+}
+function refreshBar(){
+  const bar=$('bar');
+  if(tool==='pan'){bar.hidden=true;return;}
+  bar.hidden=false;
+  const lum=invCount(player.slots,'lumber');
+  let txt='',has=false,bad=false;
+  if(tool==='conv'){
+    if(pendConv.size){const cost=pendCost();has=true;bad=!DEV()&&cost>lum;txt=`コンベア ${cost}マス ／ `+(DEV()?'無料(開発者モード)':`木材 ${cost}`)+(bad?'(不足)':'');}
+    else txt='指でなぞって敷設。建物のマスまでなぞると接続、既存の線から横になぞると分岐、線に重ねると合流';
+  }else if(tool==='erase'){
+    txt='タップ/なぞって撤去(建物はタップ)';
+  }else if(pendBld){
+    const pr=bldProblem();has=true;bad=!!pr;
+    txt=`${NAMES[tool]} ／ ${DEV()?'無料(開発者モード)':costText(BCOST[tool])}`+(pr?' ／ '+pr:'');
+  }else txt='マップをタップして位置を決める(ドラッグで移動)';
+  setText($('barTxt'),txt);
+  $('barTxt').classList.toggle('bad',bad);
+  $('btnOk').hidden=!has;$('btnNo').hidden=!has;$('btnRot').hidden=!(tool==='conv'||tool==='sorter');
+  $('btnOk').classList.toggle('bad',bad);
+  setText($('btnRot'),'⟳ '+ARROWS[defDir]);
+}
+function refreshUI(){
+  setText($('money'),'¥'+player.money.toLocaleString('ja-JP'));
+  setText($('btnStage'),game.done?'城 完成':'城 '+game.stage+'/'+STAGES.length);
+  setHTML($('inv'),player.slots.map(s=>`<div class="slot${s.t?'':' empty'}">${s.t?icon(s.t)+`<span class="n">${s.n}</span>`:''}</div>`).join(''));
+  document.querySelectorAll('#tools .btn[data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===tool));
+  $('btnBuild').classList.toggle('on',BTOOLS.includes(tool));
+  setText($('buildSub'),BTOOLS.includes(tool)?NAMES[tool]:'選ぶ');
+
+  $('devTag').hidden=!DEV();
+  refreshBar();
+  if(sheet)renderSheet();
+}
+
+/* --- シート(建物/店/ヘルプ) --- */
+/* ================= 設定(定義ベース) =================
+ * 設定項目を増やすには SETTINGS_DEF の items に1件足すだけ。
+ *   key     : 設定名(settings[key] / getSetting(key) で参照)
+ *   type    : 'toggle'(ON/OFF) | 'select'(options:[{value,label}]) | 'stepper'(min,max,step)
+ *   def     : 初期値
+ *   label / desc : 表示名と説明
+ *   onChange(v)  : 変更時に呼ばれる(任意)
+ * 設定ウィンドウの描画・変更処理・保存(localStorage)は自動で行われます。
+ */
+const SETTINGS_DEF=[
+  {title:'セーブ',items:[
+    {key:'autoSave',type:'toggle',def:true,label:'オートセーブ',
+     desc:'一定間隔と、アプリを離れたときに自動で保存します(手動スロットとは別枠)'},
+    {key:'autoSaveSec',type:'select',def:60,label:'オートセーブの間隔',
+     options:[{value:30,label:'30秒'},{value:60,label:'1分'},{value:300,label:'5分'}]}
+  ]},
+  {title:'開発',items:[
+    {key:'devMode',type:'toggle',def:false,label:'開発者モード',
+     desc:'材料がなくても建物・コンベアを設置できます(設置は無料。撤去しても材料は戻りません)',
+     onChange:v=>toast(v?'開発者モードをONにしました':'開発者モードをOFFにしました')},
+    {key:'unlockAll',type:'toggle',def:false,label:'全解放(開発者モード中のみ)',
+     desc:'段階に関係なく、すべての素材・設備・レシピを使えるようにします'},
+    {key:'stageJump',type:'select',def:0,label:'段階ジャンプ(開発者モード中のみ)',
+     desc:'選んだ段階へ移動します(納品状況はリセット)',
+     options:[{value:0,label:'—'},{value:1,label:'1'},{value:2,label:'2'},{value:3,label:'3'},{value:4,label:'4'},{value:5,label:'5'},{value:6,label:'6'},{value:7,label:'7'}],
+     onChange:v=>{
+       if(!v)return;
+       settings.stageJump=0;saveSettings();
+       if(!DEV()){toast('開発者モードをONにしてください');return;}
+       game.stage=v;game.delivered={};game.done=false;toast('第'+v+'段階にしました');
+     }}
+  ]}
+];
+const SETTINGS_KEY='timberWorks.settings.v1';
+const settings={},SETTING_ITEMS={};
+for(const sec of SETTINGS_DEF)for(const it of sec.items){SETTING_ITEMS[it.key]=it;settings[it.key]=it.def;}
+function loadSettings(){
+  try{
+    const o=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}');
+    for(const k in SETTING_ITEMS){if(k in o&&typeof o[k]===typeof SETTING_ITEMS[k].def)settings[k]=o[k];}
+  }catch(e){}
+}
+function saveSettings(){try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));}catch(e){}}
+function getSetting(k){return settings[k];}
+function changeSetting(key,raw){
+  const it=SETTING_ITEMS[key];if(!it)return;
+  let v;
+  if(it.type==='toggle')v=raw==='1';
+  else if(it.type==='select'){const o=it.options.find(o=>String(o.value)===raw);if(!o)return;v=o.value;}
+  else if(it.type==='stepper')v=clamp(settings[key]+(+raw)*(it.step||1),it.min,it.max);
+  else return;
+  settings[key]=v;saveSettings();
+  if(it.onChange)it.onChange(v);
+}
+function settingRow(it){
+  const v=settings[it.key];
+  let ctl='';
+  if(it.type==='toggle')ctl=`<button class="sw${v?' on':''}" data-act="set" data-key="${it.key}" data-v="${v?0:1}" aria-label="${it.label}"></button>`;
+  else if(it.type==='select')ctl='<div class="grp2">'+it.options.map(o=>`<button class="btn${v===o.value?' on':''}" data-act="set" data-key="${it.key}" data-v="${o.value}">${o.label}</button>`).join('')+'</div>';
+  else if(it.type==='stepper')ctl=`<div class="grp"><button class="btn" data-act="set" data-key="${it.key}" data-v="-1">−</button><span class="sv">${v}</span><button class="btn" data-act="set" data-key="${it.key}" data-v="1">＋</button></div>`;
+  return `<div class="set"><div class="t"><b>${it.label}</b>${it.desc?`<span>${it.desc}</span>`:''}</div>${ctl}</div>`;
+}
+loadSettings();
+const DEV=()=>!!settings.devMode;
+
+/* ================= セーブ / ロード / オートセーブ (IndexedDB) =================
+ * 保存先: IndexedDB「timberWorks」/ ストア「saves」
+ *   id: 'auto'(オートセーブ) / 'slot1'〜'slot3'(手動スロット)
+ * 設定のような小さなデータは localStorage のまま。
+ * セーブデータ形式を変えたら SAVE_VER を上げ、applyState で旧形式を読み替えること。
+ */
+const SAVE_VER=3;   // v3: 段階・納品状況を追加。v2以前は互換なし(ニューゲーム)
+const SAVE_SLOTS=[{id:'auto',name:'オートセーブ',auto:true},{id:'slot1',name:'スロット1'},{id:'slot2',name:'スロット2'},{id:'slot3',name:'スロット3'}];
+const DB_NAME='timberWorks',DB_STORE='saves';
+let dbp=null,saveInfo={},ready=false,lastAuto=0,autoBusy=false,autoWarned=false,flashT=0;
+
+function openDB(){
+  if(dbp)return dbp;
+  dbp=new Promise((res,rej)=>{
+    try{
+      const rq=indexedDB.open(DB_NAME,1);
+      rq.onupgradeneeded=()=>{rq.result.createObjectStore(DB_STORE,{keyPath:'id'});};
+      rq.onsuccess=()=>res(rq.result);
+      rq.onerror=()=>rej(rq.error);
+      rq.onblocked=()=>rej(new Error('blocked'));
+    }catch(e){rej(e);}
+  });
+  dbp.catch(()=>{dbp=null;});
+  return dbp;
+}
+function dbReq(mode,fn){
+  return openDB().then(db=>new Promise((res,rej)=>{
+    const tx=db.transaction(DB_STORE,mode),rq=fn(tx.objectStore(DB_STORE));
+    tx.oncomplete=()=>res(rq?rq.result:undefined);
+    tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error);
+  }));
+}
+const dbPut=rec=>dbReq('readwrite',st=>st.put(rec));
+const dbGet=id=>dbReq('readonly',st=>st.get(id));
+const dbAll=()=>dbReq('readonly',st=>st.getAll());
+
+function invSer(inv){return inv.map(s=>[s.t,s.n]);}
+function invLoad(inv,arr){
+  inv.forEach((s,i)=>{
+    const a=arr&&arr[i];
+    if(a&&STACK[a[0]]&&a[1]>0){s.t=a[0];s.n=Math.min(a[1]|0,STACK[a[0]]);}
+    else{s.t=null;s.n=0;}
+  });
+}
+function serialize(){
+  return {
+    v:SAVE_VER,tickNo,money:player.money,slots:invSer(player.slots),
+    conv:convList.filter(c=>!c.lane).map(c=>{const a=[c.x,c.y,c.outs,c.rr,c.item?c.item.t:null];if(c.sorter)a.push({s:1,f:c.filter,d:c.fwd});return a;}),
+    bridges:bridgeList.map(b=>[b.x,b.y,b.lanes.map(l=>l.item?l.item.t:null)]),
+    bld:bldList.map(b=>({k:b.kind,x:b.x,y:b.y,remain:b.remain,cd:b.cd,burn:b.burn,ej:b.ejRR,recipe:b.recipe,item:b.item,
+      ins:b.ins&&b.ins.map(invSer),out:b.out&&invSer(b.out),fuel:b.fuel&&invSer(b.fuel),inv:b.inv&&invSer(b.inv)})),
+    game:{stage:game.stage,delivered:game.delivered,done:game.done},
+    cam:{x:cam.x,y:cam.y,z:cam.z}
+  };
+}
+function resetWorld(){
+  conv.fill(null);bld.fill(null);convList.length=0;bldList.length=0;bridgeList.length=0;uid=0;
+  pendConv.clear();pendBld=null;tool='pan';
+  closeSheet();
+}
+function applyState(d){
+  if(d&&d.v<SAVE_VER)throw new Error('old');
+  if(!d||d.v!==SAVE_VER||!Array.isArray(d.conv)||!Array.isArray(d.bld)||!d.game)throw new Error('bad save');
+  resetWorld();
+  game.stage=clamp(d.game.stage|0||1,1,STAGES.length);game.done=!!d.game.done;game.delivered={};
+  for(const k in (d.game.delivered||{}))if(ITEMS[k])game.delivered[k]=d.game.delivered[k]|0;
+  tickNo=d.tickNo|0;
+  player.money=d.money|0;invLoad(player.slots,d.slots);
+  for(const a of d.conv){
+    if(!inBounds(a[0],a[1])||conv[a[1]*W+a[0]])continue;
+    const c=(a[5]&&a[5].s)?addSorter(a[0],a[1],clamp(a[5].d|0,0,3),ITEMS[a[5].f]?a[5].f:null):addConv(a[0],a[1],(a[2]||[]).filter(x=>x>=0&&x<4));
+    c.rr=a[3]|0;
+    if(a[4]&&STACK[a[4]])c.item={t:a[4],tk:0,fx:a[0],fy:a[1]};
+  }
+  for(const a of (d.bridges||[])){
+    if(!inBounds(a[0],a[1])||conv[a[1]*W+a[0]])continue;
+    const br=addBridge(a[0],a[1]);
+    br.lanes.forEach((l,i)=>{const t=a[2]&&a[2][i];if(t&&STACK[t])l.item={t,tk:0,fx:l.x,fy:l.y};});
+  }
+  for(const o of d.bld){
+    const def=MACHINES[o.k];
+    if(!def||o.x<0||o.y<0||o.x>W-def.w||o.y>H-def.h)continue;
+    let clash=false;
+    for(let dy=0;dy<def.h&&!clash;dy++)for(let dx=0;dx<def.w;dx++)if(bld[(o.y+dy)*W+o.x+dx]){clash=true;break;}
+    if(clash)continue;
+    const b=addBld(o.k,o.x,o.y);
+    b.remain=o.remain|0;b.cd=o.cd|0;b.burn=o.burn|0;b.ejRR=o.ej|0;
+    if(def.type==='storage')invLoad(b.inv,o.inv);
+    else if(def.type==='buyer'){if(BUY[o.item])b.item=o.item;invLoad(b.out,o.out);}
+    else if(def.type==='machine'){
+      if(o.recipe&&def.recipes.includes(o.recipe))b.recipe=o.recipe;
+      const insArr=o.ins||[];
+      b.ins.forEach((pt,i)=>invLoad(pt,insArr[i]));
+      invLoad(b.out,o.out);if(b.fuel)invLoad(b.fuel,o.fuel);
+    }
+  }
+  ensureSite();
+  if(d.cam){cam.x=+d.cam.x||0;cam.y=+d.cam.y||0;cam.z=clamp(+d.cam.z||1,.25,3);}
+  clampCam();refreshUI();
+}
+function newGame(){
+  resetWorld();tickNo=0;
+  game.stage=1;game.delivered={};game.done=false;
+  player.money=CFG.START_MONEY;
+  player.slots.forEach(s=>{s.t=null;s.n=0;});
+  invAdd(player.slots,'lumber',CFG.START_LUMBER);
+  ensureSite();
+  centerCam();refreshUI();
+  lastAuto=performance.now();
+  saveTo('auto').catch(()=>{});     // 古いオートセーブが次回起動で復活しないよう上書き
+}
+function saveTo(id){
+  const rec={id,savedAt:Date.now(),meta:{money:player.money,stage:game.stage,bld:bldList.filter(b=>b.kind!=='site').length,conv:convList.filter(c=>!c.lane).length+bridgeList.length},data:serialize()};
+  return dbPut(rec).then(()=>{saveInfo[id]={savedAt:rec.savedAt,meta:rec.meta};});
+}
+function refreshSaveInfo(){
+  dbAll().then(list=>{
+    saveInfo={};
+    for(const r of list||[])saveInfo[r.id]={savedAt:r.savedAt,meta:r.meta};
+    if(sheet&&sheet.type==='save')renderSheet();
+  }).catch(()=>{saveInfo={err:true};if(sheet&&sheet.type==='save')renderSheet();});
+}
+function flashSave(){
+  const b=$('btnSave');b.textContent='保存✔';
+  clearTimeout(flashT);flashT=setTimeout(()=>{b.textContent='セーブ';},1500);
+}
+function doAutosave(){
+  lastAuto=performance.now();
+  if(autoBusy||!ready)return;
+  autoBusy=true;
+  saveTo('auto').then(flashSave).catch(()=>{
+    if(!autoWarned){autoWarned=true;toast('オートセーブに失敗しました(この環境では保存できない可能性があります)');}
+  }).then(()=>{autoBusy=false;});
+}
+function saveAction(act,id){
+  const key=act==='new'?'new':act+':'+id;
+  const needConfirm=act!=='save'||!!saveInfo[id];     // 空きスロットへのセーブ以外は確認
+  if(needConfirm&&sheet.confirm!==key){sheet.confirm=key;return;}
+  sheet.confirm=null;
+  if(act==='save'){
+    saveTo(id).then(()=>{toast('保存しました');flashSave();refreshSaveInfo();}).catch(()=>toast('保存に失敗しました'));
+  }else if(act==='load'){
+    dbGet(id).then(rec=>{
+      if(!rec)throw new Error('none');
+      applyState(rec.data);lastAuto=performance.now();toast('ロードしました');
+    }).catch(e=>toast(e&&e.message==='old'?'旧バージョンのセーブは読み込めません':'ロードに失敗しました'));
+  }else{newGame();toast('ニューゲームを開始しました');}
+}
+function fmtTime(ts){return new Date(ts).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});}
+function startupLoad(){
+  dbGet('auto').then(rec=>{
+    if(rec&&rec.data){applyState(rec.data);toast('オートセーブを読み込みました');}
+    else toast('右上の「城」ボタンで目標を確認できます');
+  }).catch(e=>{if(e&&e.message==='old')toast('旧バージョンのセーブは互換がないため、ニューゲームで開始します');}).then(()=>{ready=true;lastAuto=performance.now();});
+}
+setInterval(()=>{
+  if(ready&&settings.autoSave&&performance.now()-lastAuto>=settings.autoSaveSec*1000)doAutosave();
+},2000);
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&ready&&settings.autoSave)doAutosave();});
+window.addEventListener('pagehide',()=>{if(ready&&settings.autoSave)doAutosave();});
+
+let sheet=null;
+let sheetOpenedAt=0;
+function openSheet(s){sheet=s;sheetOpenedAt=performance.now();$('sheet').hidden=false;renderSheet();}
+// 開いたタップの直後に発生するclickで即閉じてしまうのを防ぐ
+function closeSheetUser(){if(performance.now()-sheetOpenedAt<450)return;closeSheet();}
+function closeSheet(){sheet=null;$('sheet').hidden=true;}
+function renderSheet(){
+  if(!sheet)return;
+  let title='',html='';
+  if(sheet.type==='shop'){
+    title='店';
+    const have=invCount(player.slots,'lumber');
+    html=`${Object.keys(BUY).map(t=>isUnlocked(ITEMS[t])
+      ?`<div class="row"><div class="name">${icon(t)}<span>${ITEM_NAME[t]} ¥${BUY[t]}</span></div><div class="grp"><button class="btn" data-act="buy" data-t="${t}" data-n="1">+1</button><button class="btn" data-act="buy" data-t="${t}" data-n="5">+5</button><button class="btn" data-act="buy" data-t="${t}" data-n="10">+10</button></div></div>`
+      :`<div class="row locked"><div class="name">${icon(t)}<span>${ITEM_NAME[t]} ¥${BUY[t]}</span></div><div class="hint">第${ITEMS[t].stage}段階で解放</div></div>`).join('')}
+      ${Object.keys(SELL).filter(t=>isUnlocked(ITEMS[t])).map(t=>`<div class="row"><div class="name">${icon(t)}<span>${ITEM_NAME[t]}を売る ¥${SELL[t]}</span></div><div class="grp"><button class="btn" data-act="sell" data-t="${t}" data-n="1">1個</button><button class="btn" data-act="sell" data-t="${t}" data-n="all">全部(${invCount(player.slots,t)})</button></div></div>`).join('')}
+      <p class="hint">原木・岩は1個で持ち物1マスを使います。</p>
+      <h3>持ち物</h3>${slotsHTML(player.slots,'p')}`;
+  }else if(sheet.type==='build'){
+    title='設置するものを選ぶ';
+    html=BTOOLS.map(k=>isUnlocked(MACHINES[k])
+      ?`<button class="pick${tool===k?' cur':''}" data-act="pick" data-b="${k}">${bicon(k)}<div class="pt"><b>${NAMES[k]}(${MACHINES[k].w}x${MACHINES[k].h})</b><span class="d">${BINFO[k].d}</span></div><div class="c">${DEV()?'無料':costText(BCOST[k])}</div></button>`
+      :`<div class="pick locked">${bicon(k)}<div class="pt"><b>${NAMES[k]}(${MACHINES[k].w}x${MACHINES[k].h})</b><span class="d">第${MACHINES[k].stage}段階で解放</span></div></div>`).join('')
+      +'<p class="hint">選ぶとマップをタップして位置を決められます。</p>';
+  }else if(sheet.type==='sorter'){
+    const c=sheet.c;
+    title='仕分け機';
+    html=`<p class="hint">指定した素材は前方へ、それ以外は左右へ流します(左右に出口が無いと止まります)。</p>
+      <div class="set"><div class="t"><b>前方の向き</b><span>${ARROWS[c.fwd]}</span></div><button class="btn" data-act="sorterrot">⟳ 回転</button></div>
+      <h3>前方へ流す素材</h3><div class="grp2"><button class="btn${!c.filter?' on':''}" data-act="filter" data-item="">指定なし(すべて前方)</button>`
+      +Object.keys(ITEMS).filter(k=>isUnlocked(ITEMS[k])).map(k=>`<button class="btn${c.filter===k?' on':''}" data-act="filter" data-item="${k}">${icon(k)}<span>${ITEM_NAME[k]}</span></button>`).join('')+'</div>';
+  }else if(sheet.type==='stage'){
+    const st=curStage(),n=game.stage;
+    title=game.done?'城の完成':'第'+n+'段階 '+st.name;
+    html=castleSVG();
+    if(game.done)html+='<p>城が完成しました。おめでとうございます!</p>';
+    else{
+      html+=`<p class="hint">${st.sub}</p>`;
+      if(st.wip)html+='<p>この段階は準備中です。次のアップデートで遊べるようになります。</p>';
+      else{
+        html+='<h3>納品物</h3>'+Object.keys(st.need).map(k=>{
+          const d=Math.min(game.delivered[k]||0,st.need[k]);
+          return `<div class="row"><div class="name">${icon(k)}<span>${ITEM_NAME[k]}</span></div><div>${d} / ${st.need[k]}</div></div><div class="bar"><i style="width:${(d/st.need[k]*100).toFixed(0)}%"></i></div>`;
+        }).join('')
+        +`<p class="hint">クリア報酬: ¥${(st.reward||0).toLocaleString('ja-JP')}。コンベアで建設現場へ運ぶか、下の持ち物をタップして納品します。</p>`;
+        if(st.temp)html+='<p class="hint">※この段階の納品物は暫定です(組立機の実装後に鉄骨・釘へ差し替え予定)。</p>';
+      }
+      const nx=STAGES[n];
+      if(nx){const u=unlocksOf(n+1);html+='<h3>第'+(n+1)+'段階で解放</h3>'+(u.length?u.map(l=>`<p class="hint">${l}</p>`).join(''):'<p class="hint">(準備中)</p>');}
+      html+='<h3>持ち物</h3>'+slotsHTML(player.slots,'p');
+    }
+  }else if(sheet.type==='clear'){
+    title=sheet.last?'城が完成しました!':'第'+sheet.from.n+'段階クリア!';
+    html=castleSVG()+`<p>${sheet.last?'すべての段階を達成しました。':'報酬 ¥'+sheet.reward.toLocaleString('ja-JP')+' を受け取りました。'}</p>`;
+    if(sheet.last){
+      const sec=tickNo,hh=Math.floor(sec/3600),mm=Math.floor(sec%3600/60);
+      const nb=bldList.filter(b=>b.kind!=='site').length,nc=convList.filter(c=>!c.lane).length+bridgeList.length;
+      html+=`<h3>記録</h3><p>プレイ時間: ${hh}時間${mm}分 ／ 設備: ${nb}台 ／ コンベア: ${nc}本</p><p class="hint">このまま遊び続けることもできます。最初からやり直す場合は「セーブ」から「ニューゲーム」を選べます。</p>`;
+    }
+    if(sheet.lines.length)html+='<h3>解放されたもの</h3>'+sheet.lines.map(l=>`<p>${l}</p>`).join('');
+    if(!sheet.last&&sheet.to){
+      html+=`<h3>次の目標: 第${sheet.to.n}段階 ${sheet.to.name}</h3>`;
+      html+=sheet.to.wip?'<p class="hint">この段階は準備中です。</p>':'<p class="hint">'+Object.keys(sheet.to.need).map(k=>ITEM_NAME[k]+'×'+sheet.to.need[k]).join('、')+'</p>';
+    }
+    html+='<p><button class="btn ok" style="width:100%" data-act="close">閉じる</button></p>';
+  }else if(sheet.type==='save'){
+    title='セーブ / ロード';
+    const cf=sheet.confirm;
+    html=SAVE_SLOTS.map(sl=>{
+      const inf=saveInfo[sl.id];
+      const meta=inf&&inf.meta?`${fmtTime(inf.savedAt)} ／ 第${inf.meta.stage||1}段階 ／ ¥${inf.meta.money.toLocaleString('ja-JP')} ／ 建物${inf.meta.bld} コンベア${inf.meta.conv}`:'データなし';
+      const sv=sl.auto?'':`<button class="btn${cf==='save:'+sl.id?' ok bad':''}" data-act="save" data-id="${sl.id}">${cf==='save:'+sl.id?'上書き?':'セーブ'}</button>`;
+      const ld=`<button class="btn${cf==='load:'+sl.id?' ok bad':''}" data-act="load" data-id="${sl.id}"${inf?'':' disabled'}>${cf==='load:'+sl.id?'ロード?':'ロード'}</button>`;
+      return `<div class="set"><div class="t"><b>${sl.name}</b><span>${meta}</span></div><div class="grp">${sv}${ld}</div></div>`;
+    }).join('')
+    +`<div class="set"><div class="t"><b>ニューゲーム</b><span>現在のデータを破棄して最初から始めます</span></div><button class="btn${cf==='new'?' ok bad':''}" data-act="new">${cf==='new'?'本当に?':'開始'}</button></div>`
+    +(saveInfo.err?'<p class="hint">この環境ではセーブを利用できません。</p>':'<p class="hint">ロード・上書き・ニューゲームは、もう一度タップで確定します。</p>');
+  }else if(sheet.type==='settings'){
+    title='設定';
+    html=SETTINGS_DEF.map(sec=>`<h3>${sec.title}</h3>`+sec.items.map(settingRow).join('')).join('');
+  }else{
+    const b=sheet.b,def=MACHINES[b.kind];
+    title=def.name;
+    if(def.type==='storage'){
+      html=`<h3>貯蔵(${def.slots}スロット)</h3>${slotsHTML(b.inv,'inv')}
+        <h3>持ち物</h3>${slotsHTML(player.slots,'p')}
+        <p class="hint">スロットをタップすると反対側へ移動します。</p>`;
+    }else if(def.type==='buyer'){
+      const price=BUY[b.item],opts=Object.keys(BUY).filter(k=>isUnlocked(ITEMS[k]));
+      let st;
+      if(!price)st='購入する品目を選んでください';
+      else if(invRoom(b.out,b.item)<=0)st='出力が満杯です(購入を止めています)';
+      else if(b.cd>=def.every&&player.money<price)st='資金が足りません(待機中)';
+      else st='稼働中';
+      html=`<p class="hint">選んだ一次資源を店と同じ価格で自動購入し、${def.every}秒に1個出力します(毎分${Math.round(60/def.every*10)/10}個)。購入のたびに代金を支払います。${st}</p>
+        <div class="bar"><i style="width:${(Math.min(1,b.cd/def.every)*100).toFixed(0)}%"></i></div>
+        <h3>購入する品目</h3><div class="grp2">${opts.map(k=>`<button class="btn${b.item===k?' on':''}" data-act="buysel" data-item="${k}">${icon(k)}<span>${ITEM_NAME[k]} ¥${BUY[k]}</span></button>`).join('')}</div>
+        <h3>出力</h3>${slotsHTML(b.out,'out')}
+        <h3>持ち物</h3>${slotsHTML(player.slots,'p')}
+        <p class="hint">出力スロットをタップすると持ち物へ移します。</p>`;
+    }else{
+      const r=RECIPES[b.recipe],keys=Object.keys(r.in);
+      const per=Math.round(60/r.every*10)/10;
+      const rlist=def.recipes.filter(k=>isUnlocked(RECIPES[k])||k===b.recipe);
+      const line=keys.map(k=>ITEM_NAME[k]+r.in[k]).join('＋')+' → '+ITEM_NAME[r.out]+r.yield+'個(毎分'+per+'個)';
+      let st;
+      if(b.remain>0)st=b.working?'稼働中':(invRoom(b.out,r.out)<=0?'出力が満杯です':'燃料待ち('+ITEM_NAME[def.fuel]+'を入れてください)');
+      else st=keys.every((k,i)=>invCount(b.ins[i],k)>=r.in[k])?'次のティックで開始':'待機中('+keys.map(k=>ITEM_NAME[k]).join('・')+'を入れてください)';
+      const sub=[];
+      if(r.burn)sub.push('燃焼 残り '+b.burn+'秒');
+      if(r.yield>1)sub.push(ITEM_NAME[r.out]+' 残り '+b.remain+'個');
+      html=(rlist.length>1?`<h3>レシピ</h3><div class="grp2">${rlist.map(k=>`<button class="btn${b.recipe===k?' on':''}" data-act="recipe" data-r="${k}">${icon(RECIPES[k].out)}<span>${ITEM_NAME[RECIPES[k].out]}</span></button>`).join('')}</div>`:'')
+        +`<p class="hint">${line}。${r.burn?'燃料: '+ITEM_NAME[def.fuel]+'1個で'+r.burn+'秒稼働。':''}${st}</p>`
+        +`<div class="bar"><i style="width:${(progOf(b)*100).toFixed(0)}%"></i></div>`
+        +(sub.length?`<p class="hint">${sub.join(' ／ ')}</p>`:'')
+        +keys.map((k,i)=>`<h3>入力(${ITEM_NAME[k]})</h3>${slotsHTML(b.ins[i],'in'+i)}`).join('')
+        +(def.fuel?`<h3>燃料(${ITEM_NAME[def.fuel]})</h3>${slotsHTML(b.fuel,'fuel')}`:'')
+        +`<h3>出力</h3>${slotsHTML(b.out,'out')}`
+        +`<h3>持ち物</h3>${slotsHTML(player.slots,'p')}`
+        +`<p class="hint">スロットをタップすると反対側へ移動します。</p>`;
+    }
+  }
+  setText($('shT'),title);
+  setHTML($('shB'),html);
+}
+function slotInv(b,k){
+  if(k==='p')return player.slots;
+  if(!b)return null;
+  if(k==='out')return b.out;
+  if(k==='fuel')return b.fuel;
+  if(k==='inv')return b.inv;
+  if(/^in\d+$/.test(k))return b.ins[+k.slice(2)];
+  return null;
+}
+function slotClick(k,i){
+  if(sheet&&sheet.type==='stage'){if(k==='p')deliverFromInv(i);return;}
+  const b=sheet&&sheet.b;
+  if(k==='p'&&!b){toast('建物をタップして出し入れします');return;}
+  const src=slotInv(b,k);if(!src)return;
+  const s=src[i];if(!s||!s.t)return;
+  let dst;
+  if(k==='p'){
+    dst=portFor(b,s.t);
+    if(!dst){
+      if(MACHINES[b.kind].type==='buyer'){toast(MACHINES[b.kind].name+'には入れられません');return;}
+      const def=MACHINES[b.kind],r=RECIPES[b.recipe];
+      const names=Object.keys(r.in).map(x=>ITEM_NAME[x]);if(def.fuel)names.push(ITEM_NAME[def.fuel]);
+      toast(def.name+'に入れられるのは'+names.join('と')+'のみです');return;
+    }
+  }else dst=player.slots;
+  const t=s.t,n=s.n,left=invAdd(dst,t,n);
+  if(left===n){toast(dst===player.slots?'持ち物がいっぱいです':'空きがありません');return;}
+  s.n=left;if(!left)s.t=null;
+}
+function buyItem(t,n){
+  if(!BUY[t]||!isUnlocked(ITEMS[t]))return;
+  const room=invRoom(player.slots,t),afford=Math.floor(player.money/BUY[t]);
+  const k=Math.min(n,room,afford);
+  if(k<=0){toast(room<=0?'持ち物に空きがありません':'資金が足りません');return;}
+  player.money-=k*BUY[t];invAdd(player.slots,t,k);
+  if(k<n)toast(`${k}個だけ購入しました`);
+}
+function sellItem(t,n){
+  if(!SELL[t])return;
+  const have=invCount(player.slots,t),k=n==='all'?have:Math.min(+n,have);
+  if(k<=0){toast('売れる'+ITEM_NAME[t]+'がありません');return;}
+  invTake(player.slots,t,k);player.money+=k*SELL[t];
+}
+function setRecipe(r){const b=sheet&&sheet.b;if(b)changeRecipe(b,r);}
+$('shB').addEventListener('pointerdown',e=>{
+  const el=e.target.closest('[data-k],[data-act]');if(!el||el.disabled)return;
+  e.preventDefault();
+  if(sheet&&!/^(save|load|new)$/.test(el.dataset.act||''))sheet.confirm=null;
+  if(el.dataset.k)slotClick(el.dataset.k,+el.dataset.i);
+  else if(el.dataset.act==='buy')buyItem(el.dataset.t,+el.dataset.n);
+  else if(el.dataset.act==='sell')sellItem(el.dataset.t,el.dataset.n);
+  else if(el.dataset.act==='recipe')setRecipe(el.dataset.r);
+  else if(el.dataset.act==='buysel'){if(sheet&&sheet.b)setBuyerItem(sheet.b,el.dataset.item);}
+  else if(el.dataset.act==='filter'){if(sheet&&sheet.c)sheet.c.filter=el.dataset.item||null;}
+  else if(el.dataset.act==='sorterrot'){if(sheet&&sheet.c)setSorterDir(sheet.c,(sheet.c.fwd+1)%4);}
+  else if(el.dataset.act==='pick'){closeSheet();setTool(el.dataset.b);toast(NAMES[el.dataset.b]+'を選択: マップをタップして位置を決めてください');return;}
+  else if(el.dataset.act==='set')changeSetting(el.dataset.key,el.dataset.v);
+  else if(/^(save|load|new)$/.test(el.dataset.act))saveAction(el.dataset.act,el.dataset.id);
+  else if(el.dataset.act==='close'){closeSheet();}
+  refreshUI();
+});
+$('shX').addEventListener('click',closeSheetUser);
+$('shBd').addEventListener('click',closeSheetUser);
+$('btnShop').addEventListener('click',()=>openSheet({type:'shop'}));
+$('btnSettings').addEventListener('click',()=>openSheet({type:'settings'}));
+$('btnStage').addEventListener('click',()=>openSheet({type:'stage'}));
+$('btnSave').addEventListener('click',()=>{openSheet({type:'save',confirm:null});refreshSaveInfo();});
+$('btnOk').addEventListener('click',confirmPending);
+$('btnNo').addEventListener('click',cancelPending);
+$('btnRot').addEventListener('click',rotateDef);
+document.querySelectorAll('#tools .btn[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
+$('btnBuild').addEventListener('click',()=>openSheet({type:'build'}));
+
+/* ================= メインループ ================= */
+let last=performance.now(),acc=0;
+function frame(now){
+  frameDt=Math.min(now-last,1000);last=now;
+  acc+=frameDt;
+  let g=0,ticked=false;
+  while(acc>=CFG.TICK_MS&&g++<8){
+    acc-=CFG.TICK_MS;
+    try{tick();}catch(err){console.error(err);}
+    ticked=true;
+  }
+  if(acc>=CFG.TICK_MS)acc=0;
+  tf=acc/CFG.TICK_MS;
+  draw();
+  if(ticked)refreshUI();
+  requestAnimationFrame(frame);
+}
+validateDefs().forEach(e=>console.warn('[defs]',e));
+resize();centerCam();ensureSite();refreshUI();startupLoad();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
