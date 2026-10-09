@@ -36,7 +36,7 @@ button{font:inherit;color:inherit}
 #bar{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
 #barTxt{flex:1;font-size:12px;line-height:1.35;color:var(--dim)}
 #barTxt.bad{color:var(--red)}
-#tools{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+#tools{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
 .pick{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;min-height:60px;cursor:pointer}
 .pick svg{width:40px;height:40px;flex:none}
 .pick .pt{flex:1;min-width:0}
@@ -117,6 +117,7 @@ button{font:inherit;color:inherit}
     <button class="btn" data-tool="conv">コンベア<small>木材1</small></button>
     <button class="btn" id="btnBuild">設置<small id="buildSub">選ぶ</small></button>
     <button class="btn" data-tool="erase">撤去<small>返却</small></button>
+    <button class="btn" id="btnLand">土地<small>購入</small></button>
   </div>
 </div>
 
@@ -140,7 +141,8 @@ const CFG={
   LOG_YIELD:50,                 // 原木1個 → 木材50個(1秒に1個)
   COST:{sawmill:10,processor:10,storage:5,conveyor:1},   // 設置コスト(木材)
   INV_SLOTS:10,
-  STORAGE_SLOTS:2,MACHINE_SLOTS:1,MACHINE_OUT_CAP:10,   // MACHINE_OUT_CAP: 生産品の保持上限(個)。材料の保持上限はレシピの必要数。   // MACHINE_SLOTS: 製作系機械の内部ストレージ(入力/出力それぞれ)は必ず1マス。今後追加する機械も同様
+  STORAGE_SLOTS:2,MACHINE_SLOTS:1,MACHINE_OUT_CAP:10,BELT_TICKS:2,   // BELT_TICKS: コンベア1マスの通過に必要な秒数(2秒＝毎分30個)
+     // MACHINE_OUT_CAP: 生産品の保持上限(個)。材料の保持上限はレシピの必要数。   // MACHINE_SLOTS: 製作系機械の内部ストレージ(入力/出力それぞれ)は必ず1マス。今後追加する機械も同様
   TICK_MS:1000
 };
 /* ================= データ定義(素材・機械・レシピ・段階) =================
@@ -168,7 +170,7 @@ const ITEMS={
   nail:{name:'釘',stack:50,sell:18,stage:3,color:'#b8bec7'},
   iron_frame:{name:'鉄骨',stack:50,sell:290,stage:3,color:'#6f8299'},
   clay:{name:'粘土',stack:1,buy:300,stage:4,color:'#b5703d'},
-  sand:{name:'砂',stack:1,buy:250,stage:4,color:'#e0c27a'},
+  sand:{name:'砂',stack:50,sell:4,stage:4,color:'#e0c27a'},
   limestone:{name:'石灰岩',stack:1,buy:600,stage:4,color:'#d9d6c9'},
   brick:{name:'レンガ',stack:50,sell:10,stage:4,color:'#b0523a'},
   roof_tile:{name:'瓦',stack:50,sell:12,stage:4,color:'#c0643c'},
@@ -193,17 +195,17 @@ const ITEMS={
 };
 const MACHINES={
   sawmill:{name:'製材機',type:'machine',w:2,h:2,cost:{lumber:10},ports:1,recipes:['saw_log'],
-    color:'#e8a33d',bg:'#343942',spin:.012,desc:'原木を木材に加工(原木1個 → 木材50個、1秒に1個)'},
+    color:'#e8a33d',bg:'#343942',spin:.012,desc:'原木を木材に加工(原木1個 → 木材50個、2秒に1個)'},
   processor:{name:'加工機',type:'machine',w:2,h:2,cost:{lumber:10},ports:1,recipes:['plank','stick','cut_stone','iron_plate','iron_rod','nail','steel_plate','gold_leaf','statue'],
     color:'#c2571a',bg:'#3a3431',spin:.008,desc:'木材を板・棒に、石を切石に、鉄を鉄板・鉄棒に、鉄棒を釘に、鋼を鋼板に、金を金箔に、切石を石像に加工(レシピ切替可)'},
-  crusher:{name:'破砕機',type:'machine',w:2,h:2,cost:{lumber:10,plank:10},stage:2,ports:1,recipes:['crush_rock'],
-    color:'#9aa4b1',bg:'#33363b',spin:.01,desc:'岩を石に加工(岩1個 → 石50個、毎分20個)'},
+  crusher:{name:'破砕機',type:'machine',w:2,h:2,cost:{lumber:10,plank:10},stage:2,ports:1,recipes:['crush_rock','crush_stone'],
+    color:'#9aa4b1',bg:'#33363b',spin:.01,desc:'岩を石に、石を砂に加工(岩1個 → 石50個、毎分10個)'},
   smelter:{name:'精錬機',type:'machine',w:2,h:2,cost:{lumber:10,stone:10},stage:3,ports:1,fuel:'lumber',recipes:['smelt_iron','smelt_gold'],
-    color:'#e0793a',bg:'#352c29',spin:0,desc:'鉄鉱石を鉄に、金鉱石を金に精錬(鉄: 鉄鉱石1個 → 鉄50個、毎分15個)。燃料の木材が必要(木材1個で4秒稼働)'},
+    color:'#e0793a',bg:'#352c29',spin:0,desc:'鉄鉱石を鉄に、金鉱石を金に精錬(鉄: 鉄鉱石1個 → 鉄50個、毎分7.5個)。燃料の木材が必要(木材1個で4秒稼働)'},
   kiln:{name:'窯',type:'machine',w:2,h:2,cost:{lumber:10,stone:30,iron_plate:5},stage:4,ports:1,fuel:'lumber',recipes:['bake_brick','bake_tile','bake_glass','bake_lime'],
     color:'#c9704a',bg:'#3a2c26',spin:0,desc:'粘土・砂・石灰岩を焼く(レンガ・瓦・ガラス・石灰)。燃料の木材が必要(木材1個で4秒稼働)'},
   blast_furnace:{name:'高炉',type:'machine',w:2,h:2,cost:{stone_block:10,brick:30,iron_plate:10},stage:5,ports:2,fuel:'lumber',recipes:['smelt_steel'],
-    color:'#ff7a3d',bg:'#33292a',spin:0,desc:'鉄鉱石と石炭から鋼を作る(各1個 → 鋼50個、毎分12個)。燃料の木材が必要(木材1個で4秒稼働)'},
+    color:'#ff7a3d',bg:'#33292a',spin:0,desc:'鉄鉱石と石炭から鋼を作る(各1個 → 鋼50個、毎分6個)。燃料の木材が必要(木材1個で4秒稼働)'},
   assembler:{name:'組立機',type:'machine',w:2,h:2,cost:{lumber:10,iron_plate:10,iron_rod:5},stage:3,ports:2,recipes:['iron_frame','mortar','wall_panel','window_unit','beam'],
     color:'#5aa7c9',bg:'#2c333b',spin:.01,desc:'複数の材料を組み合わせて部品を作る(鉄骨・モルタル・壁パネル・窓ユニット・梁。材料ごとに入力ポートが1つ)'},
   large_assembler:{name:'大型組立機',type:'machine',w:3,h:3,cost:{steel_plate:10,iron_frame:5,glass:5,plank:20},stage:6,ports:4,
@@ -224,34 +226,35 @@ const MACHINES={
   site:{name:'建設現場',type:'site',w:4,h:4,cost:{},color:'#e8a33d',desc:'城の建設現場。段階ごとの納品物を運び込みます'}
 };
 const RECIPES={
-  saw_log:{in:{log:1},out:'lumber',yield:CFG.LOG_YIELD,every:1},
-  crush_rock:{in:{rock:1},out:'stone',yield:50,every:3,stage:2},
-  smelt_iron:{in:{iron_ore:1},out:'iron',yield:50,every:4,burn:4,stage:3},
-  plank:{in:{lumber:1},out:'plank',yield:1,every:3},
-  stick:{in:{lumber:1},out:'stick',yield:1,every:3},
-  cut_stone:{in:{stone:3},out:'stone_block',yield:1,every:6,stage:2},
-  iron_plate:{in:{iron:1},out:'iron_plate',yield:1,every:3,stage:3},
-  iron_rod:{in:{iron:1},out:'iron_rod',yield:1,every:3,stage:3},
-  nail:{in:{iron_rod:1},out:'nail',yield:4,every:1,stage:3},            // 鉄棒1 → 釘4(1秒に1個=毎分60個)
-  iron_frame:{in:{iron_plate:2,iron_rod:2},out:'iron_frame',yield:1,every:6,stage:3},   // 毎分10個
-  mortar:{in:{lime:2,stone:2},out:'mortar',yield:2,every:2,stage:4},                    // 石灰2+石2 → モルタル2(毎分30個)
-  bake_brick:{in:{clay:1},out:'brick',yield:50,every:4,burn:4,stage:4},                  // 毎分15個
-  bake_tile:{in:{clay:1},out:'roof_tile',yield:50,every:5,burn:4,stage:4},               // 毎分12個
-  bake_glass:{in:{sand:1},out:'glass',yield:50,every:6,burn:4,stage:4},                  // 毎分10個
-  bake_lime:{in:{limestone:1},out:'lime',yield:50,every:4,burn:4,stage:4},                // 毎分15個
-  smelt_steel:{in:{iron_ore:1,coal:1},out:'steel',yield:50,every:5,burn:4,stage:5},       // 鉄鉱石1+石炭1 → 鋼50(毎分12個)
-  steel_plate:{in:{steel:1},out:'steel_plate',yield:1,every:4,stage:5},                  // 毎分15個
-  wall_panel:{in:{stone_block:4,mortar:2},out:'wall_panel',yield:1,every:8,stage:5},     // 毎分7.5個
-  window_unit:{in:{glass:4,iron_rod:2},out:'window_unit',yield:1,every:6,stage:5},       // 毎分10個
-  beam:{in:{plank:3,nail:6},out:'beam',yield:1,every:6,stage:5},                          // 毎分10個
-  smelt_gold:{in:{gold_ore:1},out:'gold',yield:10,every:6,burn:4,stage:6},             // 金鉱石1 → 金10(毎分10個)
-  gold_leaf:{in:{gold:1},out:'gold_leaf',yield:5,every:1,stage:6},                      // 金1 → 金箔5(毎分60個)
-  statue:{in:{stone_block:3},out:'statue',yield:1,every:12,stage:6},                    // 毎分5個
-  castle_gate:{in:{steel_plate:8,plank:10,nail:40},out:'castle_gate',yield:1,every:30,stage:6},          // 毎分2個
-  tower_unit:{in:{wall_panel:10,beam:5,window_unit:4},out:'tower_unit',yield:1,every:40,stage:6},        // 毎分1.5個
-  roof_unit:{in:{roof_tile:40,beam:4,nail:20},out:'roof_unit',yield:1,every:30,stage:7},                 // 毎分2個
-  keep_unit:{in:{tower_unit:4,roof_unit:2,iron_frame:20,statue:4},out:'keep_unit',yield:1,every:120,stage:7},   // 毎分0.5個
-  golden_shachi:{in:{gold_leaf:50,steel:10},out:'golden_shachi',yield:1,every:60,stage:7}                // 毎分1個
+  saw_log:{in:{log:1},out:'lumber',yield:CFG.LOG_YIELD,every:2},
+  crush_stone:{in:{stone:1},out:'sand',yield:2,every:4,stage:4},               // 石1 → 砂2(破砕機)
+  crush_rock:{in:{rock:1},out:'stone',yield:50,every:6,stage:2},
+  smelt_iron:{in:{iron_ore:1},out:'iron',yield:50,every:8,burn:4,stage:3},
+  plank:{in:{lumber:1},out:'plank',yield:1,every:6},
+  stick:{in:{lumber:1},out:'stick',yield:1,every:6},
+  cut_stone:{in:{stone:3},out:'stone_block',yield:1,every:12,stage:2},
+  iron_plate:{in:{iron:1},out:'iron_plate',yield:1,every:6,stage:3},
+  iron_rod:{in:{iron:1},out:'iron_rod',yield:1,every:6,stage:3},
+  nail:{in:{iron_rod:1},out:'nail',yield:4,every:2,stage:3},
+  iron_frame:{in:{iron_plate:2,iron_rod:2},out:'iron_frame',yield:1,every:12,stage:3},
+  mortar:{in:{lime:2,stone:2},out:'mortar',yield:2,every:4,stage:4},
+  bake_brick:{in:{clay:1},out:'brick',yield:50,every:8,burn:4,stage:4},
+  bake_tile:{in:{clay:1},out:'roof_tile',yield:50,every:10,burn:4,stage:4},
+  bake_glass:{in:{sand:1},out:'glass',yield:1,every:12,burn:4,stage:4},     // 砂1 → ガラス1
+  bake_lime:{in:{limestone:1},out:'lime',yield:50,every:8,burn:4,stage:4},
+  smelt_steel:{in:{iron_ore:1,coal:1},out:'steel',yield:50,every:10,burn:4,stage:5},
+  steel_plate:{in:{steel:1},out:'steel_plate',yield:1,every:8,stage:5},
+  wall_panel:{in:{stone_block:4,mortar:2},out:'wall_panel',yield:1,every:16,stage:5},
+  window_unit:{in:{glass:4,iron_rod:2},out:'window_unit',yield:1,every:12,stage:5},
+  beam:{in:{plank:3,nail:6},out:'beam',yield:1,every:12,stage:5},
+  smelt_gold:{in:{gold_ore:1},out:'gold',yield:10,every:12,burn:4,stage:6},
+  gold_leaf:{in:{gold:1},out:'gold_leaf',yield:5,every:2,stage:6},
+  statue:{in:{stone_block:3},out:'statue',yield:1,every:24,stage:6},
+  castle_gate:{in:{steel_plate:8,plank:10,nail:40},out:'castle_gate',yield:1,every:60,stage:6},
+  tower_unit:{in:{wall_panel:10,beam:5,window_unit:4},out:'tower_unit',yield:1,every:80,stage:6},
+  roof_unit:{in:{roof_tile:40,beam:4,nail:20},out:'roof_unit',yield:1,every:60,stage:7},
+  keep_unit:{in:{tower_unit:4,roof_unit:2,iron_frame:20,statue:4},out:'keep_unit',yield:1,every:240,stage:7},
+  golden_shachi:{in:{gold_leaf:50,steel:10},out:'golden_shachi',yield:1,every:120,stage:7}
 };
 const STAGES=[
   {n:1,name:'木工',sub:'足場',need:{plank:200,stick:100},reward:3000},
@@ -262,7 +265,7 @@ const STAGES=[
   {n:6,name:'大型組立',sub:'門と塔',need:{castle_gate:1,tower_unit:4,statue:8},reward:30000},
   {n:7,name:'築城',sub:'天守',need:{keep_unit:1,golden_shachi:2},reward:0}
 ];
-const SITE={x:48,y:46};          // 建設現場の固定位置(4x4)
+const SITE={x:48,y:48};          // 建設現場の固定位置(4x4)。マップ中心(50,50)がちょうど建物の中心
 // ---- 定義から導出(他のコードはこれらを参照) ----
 const STACK={},ITEM_NAME={},BUY={},SELL={};
 for(const id in ITEMS){const it=ITEMS[id];STACK[id]=it.stack;ITEM_NAME[id]=it.name;if(it.buy)BUY[id]=it.buy;if(it.sell)SELL[id]=it.sell;}
@@ -398,6 +401,65 @@ function payCost(c){for(const t in c)invTake(player.slots,t,c[t]);}
 function refundCost(c){for(const t in c)invAdd(player.slots,t,c[t]);}
 function costText(c){return Object.keys(c).map(t=>ITEM_NAME[t]+c[t]).join(' + ');}
 const W=CFG.W,H=CFG.H,CS=CFG.CS;
+
+/* ================= 土地(敷地) =================
+ * マップを10x10マスの区画(エリア)に分け、購入した区画の上にだけ建物・コンベアを置ける。
+ * 初期の敷地は中央の2x2区画(=20x20マス)。購入は「持っている区画に辺で隣り合う区画」だけ。
+ * 購入費は LAND.BASE を最初の1区画目として、1区画買うごとに LAND.RATE 倍になる。
+ */
+const LAND={N:10,SIZE:10,BASE:5000,RATE:1.75};
+const land={own:new Array(LAND.N*LAND.N).fill(false),bought:0};
+const parcelIdx=(x,y)=>Math.floor(y/LAND.SIZE)*LAND.N+Math.floor(x/LAND.SIZE);
+const ownedAt=(x,y)=>x>=0&&y>=0&&x<W&&y<H&&land.own[parcelIdx(x,y)];
+const landPrice=()=>Math.round(LAND.BASE*Math.pow(LAND.RATE,land.bought));
+const NEIGH4=[[1,0],[-1,0],[0,1],[0,-1]];
+function parcelBuyable(pi){
+  if(land.own[pi])return false;
+  const px=pi%LAND.N,py=Math.floor(pi/LAND.N);
+  return NEIGH4.some(([dx,dy])=>{const qx=px+dx,qy=py+dy;return qx>=0&&qy>=0&&qx<LAND.N&&qy<LAND.N&&land.own[qy*LAND.N+qx];});
+}
+function resetLand(){
+  land.own.fill(false);land.bought=0;
+  const m=LAND.N/2;                                   // 中央の2x2区画
+  for(let py=m-1;py<=m;py++)for(let px=m-1;px<=m;px++)land.own[py*LAND.N+px]=true;
+}
+function applyLand(l){
+  land.own.fill(false);
+  for(const i of l.own)if(i>=0&&i<land.own.length)land.own[i]=true;
+  land.bought=Math.max(0,l.bought|0);
+}
+// 土地情報のない旧セーブ: 初期敷地＋既存の建物・コンベアのあるエリアを購入済みにする(購入回数は0)
+function migrateLand(){
+  resetLand();
+  for(const b of bldList)for(let dy=0;dy<b.h;dy++)for(let dx=0;dx<b.w;dx++)land.own[parcelIdx(b.x+dx,b.y+dy)]=true;
+  for(const c of convList)land.own[parcelIdx(c.x,c.y)]=true;
+}
+// 旧セーブの建設現場を新しい位置(マップ中心)へ。空いていないときは動かさない
+function relocateSite(){
+  const st=bldList.find(b=>b.kind==='site');
+  if(!st||(st.x===SITE.x&&st.y===SITE.y))return;
+  for(let dy=0;dy<st.h;dy++)for(let dx=0;dx<st.w;dx++){const i=(SITE.y+dy)*W+SITE.x+dx;if((bld[i]&&bld[i]!==st)||conv[i])return;}
+  for(let dy=0;dy<st.h;dy++)for(let dx=0;dx<st.w;dx++)bld[(st.y+dy)*W+st.x+dx]=null;
+  st.x=SITE.x;st.y=SITE.y;
+  for(let dy=0;dy<st.h;dy++)for(let dx=0;dx<st.w;dx++)bld[(st.y+dy)*W+st.x+dx]=st;
+}
+function buyParcel(pi){
+  if(land.own[pi]){toast('購入済みの土地です');return false;}
+  if(!parcelBuyable(pi)){toast('購入済みの土地に隣接していません');return false;}
+  const price=landPrice();
+  if(!DEV()&&player.money<price){toast('資金が足りません(¥'+price.toLocaleString('ja-JP')+')');return false;}
+  if(!DEV())player.money-=price;
+  land.own[pi]=true;land.bought++;
+  toast('土地を購入しました');
+  return true;
+}
+function defaultParcel(){      // 購入できる区画のうち、マップ中心に最も近いもの
+  let best=-1,bd=1e9;
+  for(let pi=0;pi<land.own.length;pi++){if(!parcelBuyable(pi))continue;const px=pi%LAND.N,py=Math.floor(pi/LAND.N),d=Math.hypot(px-4.5,py-4.5);if(d<bd){bd=d;best=pi;}}
+  return best;
+}
+resetLand();
+
 const DX=[0,1,0,-1],DY=[-1,0,1,0];          // 0上 1右 2下 3左
 const ARROWS=['↑','→','↓','←'];
 
@@ -472,6 +534,8 @@ function resolve(c){
   c.done=tickNo;
   const it=c.item;
   if(!it||it.tk===tickNo)return;
+  it.age=Math.min(CFG.BELT_TICKS,(it.age||0)+1);        // マス内での経過秒数
+  if(it.age<CFG.BELT_TICKS)return;
   const outs=routeOuts(c,it.t),n=outs.length;
   for(let k=0;k<n;k++){
     const d=outs[(c.rr+k)%n];
@@ -484,7 +548,7 @@ function resolve(c){
       if(tc.outs.includes((d+2)%4))continue;      // 正面衝突は不可
       resolve(tc);
       if(tc.item)continue;
-      tc.item={t:it.t,tk:tickNo,fx:c.x,fy:c.y};
+      tc.item={t:it.t,tk:tickNo,fx:c.x,fy:c.y,age:0};
       c.item=null;c.rr=(c.rr+k+1)%n;return;
     }
     const b=bld[i];
@@ -557,15 +621,22 @@ function accepts(b,t){
   const p=portFor(b,t);return !!p&&invRoom(p,t)>0;
 }
 function receive(b,t){if(b.kind==='site'){deliver(t,1);return;}invAdd(portFor(b,t),t,1);}
+// 建物の出力先になれるのは、建物から外向きに伸びるコンベア(建物の辺に接して、先頭が建物と反対向き)だけ。
+// 横を通り抜けるだけのコンベアや、建物へ向かうコンベアには出力しない
+function outwardOK(c,nb){
+  const dx=nb.x-nb.fx,dy=nb.y-nb.fy,away=dy===-1?0:dx===1?1:dy===1?2:3;
+  if(c.sorter)return c.fwd===away;
+  return c.outs.includes(away);
+}
 function eject(b,inv){
   if(!inv.some(s=>s.t))return;
   const n=b.nbrs.length;
   for(let k=0;k<n;k++){
     const nb=b.nbrs[(b.ejRR+k)%n];
     const c=conv[nb.y*W+nb.x];
-    if(!c||c.bridge||c.item||feedsInto(c,b))continue;
+    if(!c||c.bridge||c.item||!outwardOK(c,nb)||feedsInto(c,b))continue;
     const t=invPopAny(inv);
-    c.item={t,tk:tickNo,fx:nb.fx,fy:nb.fy};
+    c.item={t,tk:tickNo,fx:nb.fx,fy:nb.fy,age:0};
     b.ejRR=(b.ejRR+k+1)%n;
     return;
   }
@@ -637,7 +708,7 @@ function tick(){
   tickNo++;
   for(let i=convList.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;const t=convList[i];convList[i]=convList[j];convList[j]=t;}
   for(const c of convList)resolve(c);
-  for(const c of convList){if(c.item&&c.item.tk!==tickNo){c.item.fx=c.x;c.item.fy=c.y;}}
+  for(const c of convList){if(c.item&&c.item.tk!==tickNo&&c.item.age>=CFG.BELT_TICKS){c.item.fx=c.x;c.item.fy=c.y;}}
   for(const b of bldList)updateBld(b);
 }
 
@@ -660,6 +731,7 @@ function bldProblem(){
   const def=MACHINES[tool];
   for(let dy=0;dy<def.h;dy++)for(let dx=0;dx<def.w;dx++){
     const i=(p.y+dy)*W+p.x+dx,c=conv[i];
+    if(!ownedAt(p.x+dx,p.y+dy))return '未購入の土地です';
     if(bld[i])return '他の設備と重なっています';
     if(c&&!(def.type==='belt'&&!c.sorter&&!c.bridge))return '他の設備と重なっています';   // 仕分け機・橋は通常コンベアの上に置き換え可
   }
@@ -669,8 +741,9 @@ function bldProblem(){
 function stepPath(a,b){
   const dx=b.x-a.x,dy=b.y-a.y;
   const d=dy===-1?0:dx===1?1:dy===1?2:3;
+  if(!ownedAt(b.x,b.y))return false;      // 未購入の土地には敷設できない
   const ia=a.y*W+a.x,ib=b.y*W+b.x;
-  if(!bld[ia]){
+  if(!bld[ia]&&ownedAt(a.x,a.y)){
     let e=pendConv.get(ia);
     if(!e){const w=conv[ia];e={x:a.x,y:a.y,outs:w?w.outs.slice():[],auto:null};pendConv.set(ia,e);}
     if(e.auto){e.outs=[];e.auto=null;}
@@ -895,30 +968,73 @@ function drawBridgeBody(x,y,mode){
   ctx.fillStyle='#9db0c6';ctx.fillRect(px+4,py+m+5,3,5);ctx.fillRect(px+CS-7,py+m+5,3,5);
   ctx.restore();
 }
-function drawConvBody(x,y,outs,mode){
-  const px=x*CS,py=y*CS,m=CS/2;
-  ctx.save();
-  if(mode)ctx.globalAlpha=.8;
-  ctx.fillStyle=mode===0?'#2a2e35':mode===1?'#1c4642':'#4f211e';
-  ctx.fillRect(px+1,py+1,CS-2,CS-2);
-  ctx.fillStyle=mode===0?'#3b414c':mode===1?'#2b7a73':'#8a3a34';
-  ctx.fillRect(px+m-6,py+m-6,12,12);
-  for(const d of outs){
-    if(DX[d]===1)ctx.fillRect(px+m,py+m-6,m,12);
-    else if(DX[d]===-1)ctx.fillRect(px,py+m-6,m,12);
-    else if(DY[d]===1)ctx.fillRect(px+m-6,py+m,12,m);
-    else ctx.fillRect(px+m-6,py,12,m);
+// ---- ベルトコンベアの見た目(ゴムベルト) ----
+// 両側に金属のレール、ベルト面に横リブが流れる。曲がり・合流・分岐では「入口の腕・中央・出口の腕」に分けて、
+// それぞれの進行方向にリブが動く。リブの動きは荷物の速度(1マスにBELT_TICKS秒)と一致させている
+function beltIns(x,y,outs){      // このマスへ流れ込んでくる方向(コンベア・仕分け機・橋・建物の出力)
+  const ins=[];
+  for(let d=0;d<4;d++){
+    const nx=x+DX[d],ny=y+DY[d];
+    if(nx<0||ny<0||nx>=W||ny>=H)continue;
+    const back=(d+2)%4,i=ny*W+nx,nb=conv[i];
+    if(nb){
+      if(nb.bridge){if(!outs.includes(d))ins.push(d);}
+      else if(nb.outs.includes(back))ins.push(d);
+    }else{
+      const b=bld[i];
+      if(b&&b.kind!=='site'&&outs.includes(back))ins.push(d);       // 建物から外向きに伸びるコンベア
+    }
   }
+  return ins;
+}
+function beltRibs(r,f,ph){
+  const sp=8,off=((((f===1||f===2)?1:-1)*ph)%sp+sp)%sp;
+  ctx.beginPath();
+  if(f===1||f===3){for(let u=Math.floor(r.x/sp)*sp-sp;u<r.x+r.w+sp;u+=sp){const x=u+off;if(x>=r.x&&x<=r.x+r.w){ctx.moveTo(x,r.y);ctx.lineTo(x,r.y+r.h);}}}
+  else{for(let u=Math.floor(r.y/sp)*sp-sp;u<r.y+r.h+sp;u+=sp){const y=u+off;if(y>=r.y&&y<=r.y+r.h){ctx.moveTo(r.x,y);ctx.lineTo(r.x+r.w,y);}}}
+  ctx.stroke();
+}
+function drawConvBody(x,y,outs,mode,ins){
+  const px=x*CS,py=y*CS,cx=px+CS/2,cy=py+CS/2,Wd=CS*.58,h=Wd/2,rw=CS/12;
+  ins=(ins&&ins.length)?ins:[(outs[0]+2)%4];
+  const conns=[...new Set([...ins,...outs])];
+  const pal=mode===0?{rail:'#9aa3b0',edge:'#454b55',surf:'#22252b',rib:'#3b4049'}
+           :mode===1?{rail:'#4fd1c5',edge:'#1c4642',surf:'#173a37',rib:'#2b6a64'}
+           :{rail:'#e2564a',edge:'#4f211e',surf:'#3a1b19',rib:'#7a3a35'};
+  const parts=(w,fn)=>{          // 中央の正方形 + つながる方向の腕
+    const q=w/2;fn(cx-q,cy-q,w,w);
+    for(const d of conns){
+      if(d===0)fn(cx-q,py,w,CS/2);else if(d===2)fn(cx-q,cy,w,CS/2);
+      else if(d===1)fn(cx,cy-q,CS/2,w);else fn(px,cy-q,CS/2,w);
+    }
+  };
+  ctx.save();
+  if(mode)ctx.globalAlpha=.85;
+  ctx.beginPath();ctx.rect(px,py,CS,CS);ctx.clip();                    // 影は自分のマスの中だけ
+  ctx.fillStyle='rgba(0,0,0,.35)';parts(Wd+2*rw,(a,b,w2,h2)=>ctx.fillRect(a+1.5,b+2.5,w2,h2));
+  ctx.fillStyle=pal.edge;parts(Wd+2*rw,(a,b,w2,h2)=>ctx.fillRect(a,b,w2,h2));                       // レール(縁)
+  ctx.fillStyle=pal.rail;parts(Wd+2*rw-1.4,(a,b,w2,h2)=>ctx.fillRect(a+.7,b+.7,w2-1.4,h2-1.4));   // レール(金属)
+  ctx.fillStyle=pal.surf;parts(Wd,(a,b,w2,h2)=>ctx.fillRect(a,b,w2,h2));                            // ベルト面
   if(cam.z>=.45){
-    const p=mode?.5:tf;
-    ctx.strokeStyle=mode===2?'#ff9d94':'#e8a33d';ctx.lineWidth=1.6;
-    for(const d of outs){
-      const s=p*m;
-      ctx.save();
-      ctx.translate(px+m+DX[d]*s,py+m+DY[d]*s);ctx.rotate(d*Math.PI/2);
-      ctx.globalAlpha*=Math.sin(Math.PI*p)*.9;
-      ctx.beginPath();ctx.moveTo(-4,2);ctx.lineTo(0,-2);ctx.lineTo(4,2);ctx.stroke();
-      ctx.restore();
+    const ph=(tickNo+tf)*CS/CFG.BELT_TICKS;                              // ベルト面の進み(px)
+    ctx.strokeStyle=pal.rib;ctx.lineWidth=1.6;
+    let lanes;
+    if(ins.length===1&&outs.length===1&&ins[0]===(outs[0]+2)%4){          // まっすぐ: 1本の連続したレーン
+      const f=outs[0];
+      lanes=[{f,r:(f===1||f===3)?{x:px,y:cy-h,w:CS,h:2*h}:{x:cx-h,y:py,w:2*h,h:CS}}];
+    }else{
+      const arm=d=>d===0?{x:cx-h,y:py,w:2*h,h:cy-h-py}:d===2?{x:cx-h,y:cy+h,w:2*h,h:py+CS-(cy+h)}:d===1?{x:cx+h,y:cy-h,w:px+CS-(cx+h),h:2*h}:{x:px,y:cy-h,w:cx-h-px,h:2*h};
+      lanes=[{f:outs[0],r:{x:cx-h,y:cy-h,w:2*h,h:2*h}}];
+      for(const d of ins)lanes.push({f:(d+2)%4,r:arm(d)});
+      for(const d of outs)lanes.push({f:d,r:arm(d)});
+    }
+    for(const ln of lanes){ctx.save();ctx.beginPath();ctx.rect(ln.r.x,ln.r.y,ln.r.w,ln.r.h);ctx.clip();beltRibs(ln.r,ln.f,ph);ctx.restore();}
+    if(mode){                                                             // 設置前のゴーストだけ、向きの矢印を添える
+      ctx.strokeStyle=mode===2?'#ffb3ab':'#c9f5f0';ctx.lineWidth=1.8;ctx.lineCap='round';ctx.lineJoin='round';
+      for(const d of outs){
+        ctx.save();ctx.translate(cx+DX[d]*CS*.2,cy+DY[d]*CS*.2);ctx.rotate(d*Math.PI/2);
+        ctx.beginPath();ctx.moveTo(-4,2);ctx.lineTo(0,-2);ctx.lineTo(4,2);ctx.stroke();ctx.restore();
+      }
     }
   }
   ctx.restore();
@@ -1095,16 +1211,44 @@ function draw(){
   for(let y=y0;y<=y1;y++)if(y%10===0){ctx.moveTo(x0*CS,y*CS);ctx.lineTo(x1*CS,y*CS);}
   ctx.stroke();
   ctx.strokeStyle='#e8a33d';ctx.lineWidth=2/cam.z;ctx.strokeRect(0,0,W*CS,H*CS);
+  // 土地: 未購入エリアを暗く、購入できるエリアに価格を表示。購入済みの敷地の外周は太線
+  {
+    const P=LAND.SIZE*CS,qx0=Math.max(0,Math.floor(x0/LAND.SIZE)),qx1=Math.min(LAND.N-1,Math.floor((x1-1)/LAND.SIZE));
+    const qy0=Math.max(0,Math.floor(y0/LAND.SIZE)),qy1=Math.min(LAND.N-1,Math.floor((y1-1)/LAND.SIZE)),price=landPrice();
+    const fs=Math.min(P/9.5,Math.max(16,14/cam.z));      // 区画の幅に収まる大きさ
+    for(let qy=qy0;qy<=qy1;qy++)for(let qx=qx0;qx<=qx1;qx++){
+      const pi=qy*LAND.N+qx,X=qx*P,Y=qy*P;
+      if(land.own[pi]){
+        ctx.strokeStyle='rgba(232,163,61,.85)';ctx.lineWidth=3/cam.z;ctx.beginPath();
+        for(const [dx,dy] of NEIGH4){
+          const nx=qx+dx,ny=qy+dy,out=nx<0||ny<0||nx>=LAND.N||ny>=LAND.N;
+          if(!out&&land.own[ny*LAND.N+nx])continue;
+          if(dx===1){ctx.moveTo(X+P,Y);ctx.lineTo(X+P,Y+P);}else if(dx===-1){ctx.moveTo(X,Y);ctx.lineTo(X,Y+P);}
+          else if(dy===1){ctx.moveTo(X,Y+P);ctx.lineTo(X+P,Y+P);}else{ctx.moveTo(X,Y);ctx.lineTo(X+P,Y);}
+        }
+        ctx.stroke();continue;
+      }
+      const buy=parcelBuyable(pi);
+      ctx.fillStyle=buy?'rgba(79,209,197,.10)':'rgba(4,5,7,.6)';ctx.fillRect(X,Y,P,P);
+      if(buy){
+        ctx.setLineDash([12,9]);ctx.strokeStyle='rgba(79,209,197,.6)';ctx.lineWidth=2/cam.z;ctx.strokeRect(X+1,Y+1,P-2,P-2);ctx.setLineDash([]);
+        ctx.textAlign='center';ctx.fillStyle='#9fe8df';ctx.font='700 '+fs+'px sans-serif';
+        ctx.fillText('土地 ¥'+price.toLocaleString('ja-JP'),X+P/2,Y+P/2);
+        ctx.font='600 '+(fs*.6)+'px sans-serif';ctx.fillStyle='#6fb8b0';ctx.fillText('タップで購入',X+P/2,Y+P/2+fs*1.1);
+      }
+    }
+  }
 
   // コンベア本体
-  for(const c of convList){if(c.lane||c.x<x0||c.x>=x1||c.y<y0||c.y>=y1)continue;if(c.sorter)drawSorterBody(c.x,c.y,c.fwd,c.filter,0);else drawConvBody(c.x,c.y,c.outs,0);}
+  for(const c of convList){if(c.lane||c.x<x0||c.x>=x1||c.y<y0||c.y>=y1)continue;if(c.sorter)drawSorterBody(c.x,c.y,c.fwd,c.filter,0);else drawConvBody(c.x,c.y,c.outs,0,beltIns(c.x,c.y,c.outs));}
   for(const br of bridgeList){if(br.x<x0||br.x>=x1||br.y<y0||br.y>=y1)continue;drawBridgeBody(br.x,br.y,0);}
   // 建物
   for(const b of bldList){if(b.x+b.w<x0||b.x>x1||b.y+b.h<y0||b.y>y1)continue;drawBld(b);}
   // アイテム
   for(const c of convList){
     const it=c.item;if(!it||c.x<x0-1||c.x>x1||c.y<y0-1||c.y>y1)continue;
-    drawItem(it.t,(it.fx+(c.x-it.fx)*tf+.5)*CS,(it.fy+(c.y-it.fy)*tf+.5)*CS);
+    const f=Math.min(1,((it.age||0)+tf)/CFG.BELT_TICKS);
+    drawItem(it.t,(it.fx+(c.x-it.fx)*f+.5)*CS,(it.fy+(c.y-it.fy)*f+.5)*CS);
   }
   // ゴースト: コンベア
   if(pendConv.size){
@@ -1162,7 +1306,7 @@ function moveConv(c){
     const dx=c.x-stroke.last.x,dy=c.y-stroke.last.y;
     let nx=stroke.last.x,ny=stroke.last.y;
     if(Math.abs(dx)>=Math.abs(dy))nx+=Math.sign(dx);else ny+=Math.sign(dy);
-    stepPath(stroke.last,{x:nx,y:ny});
+    if(stepPath(stroke.last,{x:nx,y:ny})===false){if(!stroke.warned){stroke.warned=true;toast('未購入の土地です');}break;}
     stroke.last={x:nx,y:ny};
   }
 }
@@ -1183,7 +1327,7 @@ cv.addEventListener('pointerdown',e=>{
   if(tool==='conv'){
     if(inBounds(c.x,c.y)){
       const i=c.y*W+c.x;
-      if(!bld[i]&&!conv[i]&&!pendConv.has(i))pendConv.set(i,{x:c.x,y:c.y,outs:[defDir],auto:'def'});
+      if(!bld[i]&&!conv[i]&&!pendConv.has(i)&&ownedAt(c.x,c.y))pendConv.set(i,{x:c.x,y:c.y,outs:[defDir],auto:'def'});
       stroke={last:c};
     }else stroke={last:null};
   }else if(tool==='erase'){
@@ -1216,7 +1360,7 @@ function endPtr(e){
   if(ptrs.size<2)gest=null;
   if(pan&&!pan.moved&&pan.tap&&e.type==='pointerup'){
     const c=cellAt(e.clientX,e.clientY);
-    if(inBounds(c.x,c.y)){const i=c.y*W+c.x,b=bld[i],cc=conv[i];if(b)openSheet(b.kind==='site'?{type:'stage'}:{type:'bld',b});else if(cc&&cc.sorter)openSheet({type:'sorter',c:cc});}
+    if(inBounds(c.x,c.y)){const i=c.y*W+c.x,b=bld[i],cc=conv[i];if(b)openSheet(b.kind==='site'?{type:'stage'}:{type:'bld',b});else if(cc&&cc.sorter)openSheet({type:'sorter',c:cc});else if(!ownedAt(c.x,c.y))openSheet({type:'land',pi:parcelIdx(c.x,c.y)});}
   }
   if(!ptrs.size){pan=null;stroke=null;}
 }
@@ -1227,7 +1371,7 @@ window.addEventListener('keydown',e=>{
   if(e.key==='Enter')confirmPending();
   else if(e.key==='Escape'){cancelPending();closeSheet();}
   else if(e.key==='r'||e.key==='R')rotateDef();
-  else if(e.key.length===1&&e.key>='1'&&e.key<='9'){const kt=['pan','conv',...BTOOLS,'erase'][+e.key-1];if(kt)setTool(kt);}
+  else if(e.key.length===1&&e.key>='1'&&e.key<='9'){const kt=['pan','conv',...BTOOLS.filter(k=>isUnlocked(MACHINES[k])),'erase'][+e.key-1];if(kt)setTool(kt);}
 });
 
 /* ================= UI ================= */
@@ -1264,6 +1408,15 @@ function icon(t){
    ?'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#8b5e34" stroke="#4a2f16" stroke-width="1.6"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="#c99a62" stroke-width="1.2"/><circle cx="12" cy="12" r="1.8" fill="#c99a62"/></svg>'
    :t==='lumber'?'<svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="1.5" fill="#d8b170" stroke="#8a6a35" stroke-width="1.6"/><path d="M5 10.5h14M5 13.5h14" stroke="#a9843f" stroke-width="1"/></svg>'
    :`<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="${(ITEMS[t]&&ITEMS[t].color)||'#888'}" stroke="#14171b" stroke-width="1.6"/></svg>`;
+}
+// 設置メニューの説明文: 機械は「解放済みのレシピ」だけから作る(先のレシピや素材を見せない)
+function machineDesc(k){
+  const m=MACHINES[k];
+  if(m.type!=='machine')return m.desc;
+  const rs=m.recipes.filter(r=>isUnlocked(RECIPES[r])),g={};
+  for(const r of rs){const R=RECIPES[r],key=Object.keys(R.in).map(i=>ITEM_NAME[i]).join('＋');(g[key]=g[key]||[]).push(ITEM_NAME[R.out]);}
+  const txt=Object.keys(g).map(key=>key+'を'+g[key].join('・')+'に').join('、');
+  return txt+'加工'+(m.fuel?'(燃料の'+ITEM_NAME[m.fuel]+'が必要)':'')+(rs.length>1?'(レシピ切替可)':'');
 }
 function bicon(k){
   const c=BINFO[k].c;
@@ -1436,6 +1589,7 @@ function serialize(){
     bld:bldList.map(b=>({k:b.kind,x:b.x,y:b.y,remain:b.remain,cd:b.cd,burn:b.burn,ej:b.ejRR,recipe:b.recipe,item:b.item,
       ins:b.ins&&b.ins.map(invSer),out:b.out&&invSer(b.out),fuel:b.fuel&&invSer(b.fuel),inv:b.inv&&invSer(b.inv)})),
     game:{stage:game.stage,delivered:game.delivered,done:game.done},
+    land:{own:land.own.map((v,i)=>v?i:-1).filter(i=>i>=0),bought:land.bought},
     cam:{x:cam.x,y:cam.y,z:cam.z}
   };
 }
@@ -1456,12 +1610,12 @@ function applyState(d){
     if(!inBounds(a[0],a[1])||conv[a[1]*W+a[0]])continue;
     const c=(a[5]&&a[5].s)?addSorter(a[0],a[1],clamp(a[5].d|0,0,3),ITEMS[a[5].f]?a[5].f:null):addConv(a[0],a[1],(a[2]||[]).filter(x=>x>=0&&x<4));
     c.rr=a[3]|0;
-    if(a[4]&&STACK[a[4]])c.item={t:a[4],tk:0,fx:a[0],fy:a[1]};
+    if(a[4]&&STACK[a[4]])c.item={t:a[4],tk:0,fx:a[0],fy:a[1],age:CFG.BELT_TICKS};
   }
   for(const a of (d.bridges||[])){
     if(!inBounds(a[0],a[1])||conv[a[1]*W+a[0]])continue;
     const br=addBridge(a[0],a[1]);
-    br.lanes.forEach((l,i)=>{const t=a[2]&&a[2][i];if(t&&STACK[t])l.item={t,tk:0,fx:l.x,fy:l.y};});
+    br.lanes.forEach((l,i)=>{const t=a[2]&&a[2][i];if(t&&STACK[t])l.item={t,tk:0,fx:l.x,fy:l.y,age:CFG.BELT_TICKS};});
   }
   for(const o of d.bld){
     const def=MACHINES[o.k];
@@ -1481,12 +1635,14 @@ function applyState(d){
       invLoad(b.out,o.out);if(b.fuel)invLoad(b.fuel,o.fuel);
     }
   }
+  if(d.land&&Array.isArray(d.land.own))applyLand(d.land);else migrateLand();   // 旧セーブは既存の建物のあるエリアを購入済みに
+  relocateSite();
   ensureSite();
   if(d.cam){cam.x=+d.cam.x||0;cam.y=+d.cam.y||0;cam.z=clamp(+d.cam.z||1,.25,3);}
   clampCam();refreshUI();
 }
 function newGame(){
-  resetWorld();tickNo=0;
+  resetWorld();tickNo=0;resetLand();
   game.stage=1;game.delivered={};game.done=false;
   player.money=CFG.START_MONEY;
   player.slots.forEach(s=>{s.t=null;s.n=0;});
@@ -1566,10 +1722,27 @@ function renderSheet(){
       <h3>持ち物</h3>${slotsHTML(player.slots,'p')}`;
   }else if(sheet.type==='build'){
     title='設置するものを選ぶ';
-    html=BTOOLS.map(k=>isUnlocked(MACHINES[k])
-      ?`<button class="pick${tool===k?' cur':''}" data-act="pick" data-b="${k}">${bicon(k)}<div class="pt"><b>${NAMES[k]}(${MACHINES[k].w}x${MACHINES[k].h})</b><span class="d">${BINFO[k].d}</span></div><div class="c">${DEV()?'無料':costText(BCOST[k])}</div></button>`
-      :`<div class="pick locked">${bicon(k)}<div class="pt"><b>${NAMES[k]}(${MACHINES[k].w}x${MACHINES[k].h})</b><span class="d">第${MACHINES[k].stage}段階で解放</span></div></div>`).join('')
+    html=BTOOLS.filter(k=>isUnlocked(MACHINES[k])).map(k=>`<button class="pick${tool===k?' cur':''}" data-act="pick" data-b="${k}">${bicon(k)}<div class="pt"><b>${NAMES[k]}(${MACHINES[k].w}x${MACHINES[k].h})</b><span class="d">${machineDesc(k)}</span></div><div class="c">${DEV()?'無料':costText(BCOST[k])}</div></button>`).join('')
       +'<p class="hint">選ぶとマップをタップして位置を決められます。</p>';
+  }else if(sheet.type==='land'){
+    title='土地の購入';
+    const sel=sheet.pi,price=landPrice();
+    let svg='<svg viewBox="0 0 100 100" style="width:100%;max-width:300px;display:block;margin:0 auto;background:#14171b;border-radius:8px">';
+    for(let pi=0;pi<land.own.length;pi++){
+      const px=pi%LAND.N,py=Math.floor(pi/LAND.N),o=land.own[pi],bu=parcelBuyable(pi);
+      svg+=`<rect data-pi="${pi}" x="${px*10+.5}" y="${py*10+.5}" width="9" height="9" rx="1" fill="${o?'#6b4a1a':bu?'#14403c':'#1d2127'}" stroke="${pi===sel?'#ffffff':o?'#e8a33d':bu?'#4fd1c5':'#2a2f37'}" stroke-width="${pi===sel?1.2:.6}"/>`;
+    }
+    svg+=`<rect x="48" y="48" width="4" height="4" fill="#e8a33d" pointer-events="none"/></svg>`;
+    const owned=land.own.filter(Boolean).length;
+    let detail='';
+    if(sel>=0&&sel<land.own.length){
+      const px=sel%LAND.N,py=Math.floor(sel/LAND.N);
+      detail=`<h3>エリア ${px+1}列・${py+1}行(x ${px*10}〜${px*10+9} ／ y ${py*10}〜${py*10+9})</h3>`;
+      if(land.own[sel])detail+='<p>購入済みの土地です。</p>';
+      else if(!parcelBuyable(sel))detail+='<p class="hint">購入済みの土地に隣り合っていないため、まだ購入できません。</p>';
+      else detail+=`<p>この10x10マスの土地を購入できます。</p><p><button class="btn ok${(!DEV()&&player.money<price)?' bad':''}" style="width:100%" data-act="buyland" data-pi="${sel}">購入 ¥${price.toLocaleString('ja-JP')}${DEV()?'(開発者モード: 無料)':''}</button></p>`;
+    }else detail='<p class="hint">地図のエリアをタップして選びます。</p>';
+    html=svg+detail+`<p class="hint">購入済み ${owned} / ${land.own.length} エリア ／ 次の購入費 ¥${price.toLocaleString('ja-JP')}(1エリア買うごとに${LAND.RATE}倍)。購入できるのは、購入済みのエリアに隣り合うエリアです。</p>`;
   }else if(sheet.type==='sorter'){
     const c=sheet.c;
     title='仕分け機';
@@ -1715,28 +1888,46 @@ function sellItem(t,n){
   invTake(player.slots,t,k);player.money+=k*SELL[t];
 }
 function setRecipe(r){const b=sheet&&sheet.b;if(b)changeRecipe(b,r);}
-$('shB').addEventListener('pointerdown',e=>{
-  const el=e.target.closest('[data-k],[data-act]');if(!el||el.disabled)return;
-  e.preventDefault();
-  if(sheet&&!/^(save|load|new)$/.test(el.dataset.act||''))sheet.confirm=null;
-  if(el.dataset.k)slotClick(el.dataset.k,+el.dataset.i);
-  else if(el.dataset.act==='buy')buyItem(el.dataset.t,+el.dataset.n);
-  else if(el.dataset.act==='sell')sellItem(el.dataset.t,el.dataset.n);
-  else if(el.dataset.act==='recipe')setRecipe(el.dataset.r);
-  else if(el.dataset.act==='buysel'){if(sheet&&sheet.b)setBuyerItem(sheet.b,el.dataset.item);}
-  else if(el.dataset.act==='filter'){if(sheet&&sheet.c)sheet.c.filter=el.dataset.item||null;}
-  else if(el.dataset.act==='sorterrot'){if(sheet&&sheet.c)setSorterDir(sheet.c,(sheet.c.fwd+1)%4);}
-  else if(el.dataset.act==='pick'){closeSheet();setTool(el.dataset.b);toast(NAMES[el.dataset.b]+'を選択: マップをタップして位置を決めてください');return;}
-  else if(el.dataset.act==='set')changeSetting(el.dataset.key,el.dataset.v);
-  else if(/^(save|load|new)$/.test(el.dataset.act))saveAction(el.dataset.act,el.dataset.id);
-  else if(el.dataset.act==='close'){closeSheet();}
+// シート内の操作は「タップ」で実行する。押した瞬間ではなく、ほとんど動かさずに指を離したときだけ実行するので、
+// 一覧をスクロールしようとして触れただけで設備が選ばれたり、購入されたりしない
+function runSheetAction(ds){
+  if(sheet&&!/^(save|load|new)$/.test(ds.act||''))sheet.confirm=null;
+  if(ds.k)slotClick(ds.k,+ds.i);
+  else if(ds.act==='buy')buyItem(ds.t,+ds.n);
+  else if(ds.act==='sell')sellItem(ds.t,ds.n);
+  else if(ds.act==='recipe')setRecipe(ds.r);
+  else if(ds.act==='buysel'){if(sheet&&sheet.b)setBuyerItem(sheet.b,ds.item);}
+  else if(ds.act==='filter'){if(sheet&&sheet.c)sheet.c.filter=ds.item||null;}
+  else if(ds.act==='sorterrot'){if(sheet&&sheet.c)setSorterDir(sheet.c,(sheet.c.fwd+1)%4);}
+  else if(ds.act==='buyland'){buyParcel(+ds.pi);}
+  else if(ds.pi!==undefined&&!ds.act){if(sheet&&sheet.type==='land')sheet.pi=+ds.pi;}
+  else if(ds.act==='pick'){closeSheet();setTool(ds.b);toast(NAMES[ds.b]+'を選択: マップをタップして位置を決めてください');return;}
+  else if(ds.act==='set')changeSetting(ds.key,ds.v);
+  else if(/^(save|load|new)$/.test(ds.act))saveAction(ds.act,ds.id);
+  else if(ds.act==='close'){closeSheet();}
   refreshUI();
+}
+let sheetDown=null;
+$('shB').addEventListener('pointerdown',e=>{
+  const el=e.target.closest('[data-k],[data-act],[data-pi]');
+  sheetDown=(el&&!el.disabled)?{id:e.pointerId,x:e.clientX,y:e.clientY,ds:Object.assign({},el.dataset)}:null;
 });
+$('shB').addEventListener('pointermove',e=>{
+  if(sheetDown&&e.pointerId===sheetDown.id&&Math.hypot(e.clientX-sheetDown.x,e.clientY-sheetDown.y)>8)sheetDown=null;
+});
+$('shB').addEventListener('pointerup',e=>{
+  const d=sheetDown;sheetDown=null;
+  if(!d||e.pointerId!==d.id||Math.hypot(e.clientX-d.x,e.clientY-d.y)>8)return;
+  runSheetAction(d.ds);
+});
+$('shB').addEventListener('pointercancel',()=>{sheetDown=null;});   // スクロールが始まるとキャンセルされる
+
 $('shX').addEventListener('click',closeSheetUser);
 $('shBd').addEventListener('click',closeSheetUser);
 $('btnShop').addEventListener('click',()=>openSheet({type:'shop'}));
 $('btnSettings').addEventListener('click',()=>openSheet({type:'settings'}));
 $('btnStage').addEventListener('click',()=>openSheet({type:'stage'}));
+$('btnLand').addEventListener('click',()=>openSheet({type:'land',pi:defaultParcel()}));
 $('btnSave').addEventListener('click',()=>{openSheet({type:'save',confirm:null});refreshSaveInfo();});
 $('btnOk').addEventListener('click',confirmPending);
 $('btnNo').addEventListener('click',cancelPending);
