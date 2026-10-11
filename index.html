@@ -65,7 +65,7 @@ button{font:inherit;color:inherit}
 .row .grp{display:flex;gap:6px}
 .row .btn{min-width:56px}
 .name{display:flex;align-items:center;gap:8px}
-.name svg{width:24px;height:24px}
+.name svg{width:24px;height:24px;flex:none}
 .bar{height:8px;background:#0e1013;border:1px solid var(--line);border-radius:4px;overflow:hidden;margin:6px 0}
 .bar i{display:block;height:100%;background:var(--amber)}
 .hint{color:var(--dim);font-size:12px}
@@ -141,7 +141,8 @@ const CFG={
   LOG_YIELD:50,                 // 原木1個 → 木材50個(1秒に1個)
   COST:{sawmill:10,processor:10,storage:5,conveyor:1},   // 設置コスト(木材)
   INV_SLOTS:10,
-  STORAGE_SLOTS:2,MACHINE_SLOTS:1,MACHINE_OUT_CAP:10,BELT_TICKS:2,   // BELT_TICKS: コンベア1マスの通過に必要な秒数(2秒＝毎分30個)
+  STORAGE_SLOTS:2,MACHINE_SLOTS:1,SELL_RATE:1.05,MACHINE_OUT_CAP:10,BELT_TICKS:2,   // SELL_RATE: 店での売却価格=原価×1.05
+     // BELT_TICKS: コンベア1マスの通過に必要な秒数(2秒＝毎分30個)
      // MACHINE_OUT_CAP: 生産品の保持上限(個)。材料の保持上限はレシピの必要数。   // MACHINE_SLOTS: 製作系機械の内部ストレージ(入力/出力それぞれ)は必ず1マス。今後追加する機械も同様
   TICK_MS:1000
 };
@@ -268,13 +269,72 @@ const STAGES=[
 const SITE={x:48,y:48};          // 建設現場の固定位置(4x4)。マップ中心(50,50)がちょうど建物の中心
 // ---- 定義から導出(他のコードはこれらを参照) ----
 const STACK={},ITEM_NAME={},BUY={},SELL={};
-for(const id in ITEMS){const it=ITEMS[id];STACK[id]=it.stack;ITEM_NAME[id]=it.name;if(it.buy)BUY[id]=it.buy;if(it.sell)SELL[id]=it.sell;}
+for(const id in ITEMS){const it=ITEMS[id];STACK[id]=it.stack;ITEM_NAME[id]=it.name;if(it.buy)BUY[id]=it.buy;}
+// ---- 原価: 購入できる一次資源は購入価格。加工品は「材料の原価 ÷ 出力数 ＋ 燃料(稼働時間あたり)の原価」 ----
+const RECIPE_OF={},UNIT_COST={};
+for(const r in RECIPES)RECIPE_OF[RECIPES[r].out]=r;
+(function(){
+  const mOf={};for(const m in MACHINES)for(const r of (MACHINES[m].recipes||[]))mOf[r]=m;
+  const memo={},busy=new Set();
+  function cost(id){
+    if(id in memo)return memo[id];
+    const rid=RECIPE_OF[id];
+    if(!rid)return memo[id]=(ITEMS[id]&&ITEMS[id].buy!==undefined)?ITEMS[id].buy:NaN;
+    if(busy.has(id))return NaN;
+    busy.add(id);
+    const r=RECIPES[rid],M=MACHINES[mOf[rid]];
+    let c=0;for(const k in r.in)c+=r.in[k]*cost(k);
+    c/=r.yield;
+    if(r.burn&&M&&M.fuel)c+=(r.every/r.burn)*cost(M.fuel);   // 生産品1個の稼働時間(every秒)ぶんの燃料
+    busy.delete(id);
+    return memo[id]=c;
+  }
+  for(const id in ITEMS)UNIT_COST[id]=cost(id);
+})();
+for(const id in ITEMS)if(ITEMS[id].sell!==undefined)SELL[id]=Math.ceil(UNIT_COST[id]*CFG.SELL_RATE-1e-9);   // sell は「売却できる」印。価格は 原価×1.05 を1円単位に切り上げ
 const BTOOLS=Object.keys(MACHINES).filter(id=>MACHINES[id].type!=='site'),NAMES={},BCOST={},BINFO={};
 for(const id in MACHINES){const m=MACHINES[id];NAMES[id]=m.name;BCOST[id]=m.cost;BINFO[id]={d:m.desc,c:m.color};}
 // ---- 段階の進行状態 ----
 const game={stage:1,delivered:{},done:false};
 const unlockedAt=n=>n<=game.stage||(DEV()&&!!settings.unlockAll);
 const isUnlocked=o=>unlockedAt((o&&o.stage)||1);
+/* ---- 設計図(設備・レシピの購入) ----
+ * 段階で「解放」されただけでは使えない。店の「設計図」で購入して初めて、設備を設置できる/製作設備でそのレシピを選べる。
+ * 購入費は下の表で調整する(各段階の合計は、前の段階のクリア報酬の約6割)。表にないもの(製材機・加工機・ストレージ・基本レシピなど)は最初から購入済み。
+ */
+const LICENSE={
+  machines:{crusher:600,sorter:300,smelter:600,assembler:600,autobuyer:600,bridge:200,kiln:1000,large_storage:600,
+            blast_furnace:1500,autobuyer_mk2:1200,large_assembler:3000},
+  recipes:{cut_stone:400,crush_rock:500,
+           smelt_iron:400,iron_plate:300,iron_rod:300,nail:300,iron_frame:300,
+           bake_brick:600,bake_tile:700,bake_glass:700,bake_lime:600,mortar:700,crush_stone:600,
+           smelt_steel:1200,steel_plate:700,wall_panel:900,window_unit:800,beam:800,
+           smelt_gold:2500,gold_leaf:1500,statue:1000,castle_gate:2000,tower_unit:2000,
+           roof_unit:4000,keep_unit:8000,golden_shachi:6000}
+};
+const own={m:{},r:{}};
+function resetOwn(){own.m={};own.r={};}
+const licensePrice=(kind,id)=>(LICENSE[kind]||{})[id];
+const ownedMachine=id=>(DEV()&&!!settings.unlockAll)||licensePrice('machines',id)===undefined||!!own.m[id];
+const ownedRecipe=id=>(DEV()&&!!settings.unlockAll)||licensePrice('recipes',id)===undefined||!!own.r[id];
+function buyLicense(kind,id){
+  const isM=kind==='machines',def=isM?MACHINES[id]:RECIPES[id],price=licensePrice(kind,id);
+  if(!def||price===undefined||(isM?ownedMachine(id):ownedRecipe(id))){toast('購入済みです');return false;}
+  if(!isUnlocked(def)){toast('まだ解放されていません');return false;}
+  if(!DEV()&&player.money<price){toast('資金が足りません(¥'+price.toLocaleString('ja-JP')+')');return false;}
+  if(!DEV())player.money-=price;
+  (isM?own.m:own.r)[id]=true;
+  toast((isM?NAMES[id]:ITEM_NAME[def.out]+'のレシピ')+'を購入しました');
+  return true;
+}
+// 解放済みで、まだ購入していない設計図(段階順・設備が先)
+function purchasableLicenses(){
+  const L=[];
+  for(const id in LICENSE.machines)if(MACHINES[id]&&isUnlocked(MACHINES[id])&&!ownedMachine(id))L.push({kind:'machines',id,stage:MACHINES[id].stage||1,price:LICENSE.machines[id]});
+  for(const id in LICENSE.recipes)if(RECIPES[id]&&isUnlocked(RECIPES[id])&&!ownedRecipe(id))L.push({kind:'recipes',id,stage:RECIPES[id].stage||1,price:LICENSE.recipes[id]});
+  return L.sort((a,b)=>(a.stage-b.stage)||(a.kind===b.kind?a.price-b.price:(a.kind==='machines'?-1:1)));
+}
+const firstOwnedRecipe=def=>def.recipes.find(r=>ownedRecipe(r))||def.recipes[0];
 const curStage=()=>STAGES[game.stage-1];
 function stageNeed(t){const st=curStage();if(game.done||!st||!st.need)return 0;return Math.max(0,(st.need[t]||0)-(game.delivered[t]||0));}
 function stageProgress(){
@@ -317,6 +377,75 @@ function deliverFromInv(i){
   if(!need){toast(game.done?'城は完成しています':(curStage().wip?'この段階は準備中です':'今の段階では必要ない素材です'));return;}
   const t=s.t,q=Math.min(s.n,need);s.n-=q;if(!s.n)s.t=null;
   deliver(t,q);
+}
+/* ---- 依頼(ランダムクエスト) ----
+ * 解放済みのレシピ(購入済みかは問わない)で作れる製品を納品して稼ぐ。常に SLOTS 件を提示し、PERIOD 秒ごとに全件を入れ替える。
+ * 達成した枠は、次の入れ替えまで空いたまま(すぐには補充されない)。報酬は 原価×数量×(1+利益率)、利益率は MARGIN の範囲でランダム。
+ * 数量は「その製品を作る機械1台が1周期に作れる数」の QTY 倍の範囲。期限切れのとき、納品済みの分は割合に応じて支払う。
+ */
+const QUEST={PERIOD:300,SLOTS:3,MARGIN:[0.30,0.50],QTY:[0.5,2.0],MAXQTY:120};
+const quests={timer:QUEST.PERIOD,list:[]};
+const rnd=()=>CFG.RNG?CFG.RNG():Math.random();
+function questCandidates(){
+  const set=new Set();
+  for(const id in RECIPES)if(isUnlocked(RECIPES[id]))set.add(RECIPES[id].out);
+  return [...set];
+}
+function makeQuest(item){
+  const r=RECIPES[RECIPE_OF[item]],per=(60/r.every)*(QUEST.PERIOD/60);
+  const qty=Math.max(1,Math.min(QUEST.MAXQTY,Math.round(per*(QUEST.QTY[0]+rnd()*(QUEST.QTY[1]-QUEST.QTY[0])))));
+  const margin=QUEST.MARGIN[0]+rnd()*(QUEST.MARGIN[1]-QUEST.MARGIN[0]);
+  return {item,qty,done:0,reward:Math.round(UNIT_COST[item]*qty*(1+margin)),margin:Math.round(margin*100),cleared:false};
+}
+function refillQuests(announce){
+  let partial=0;
+  if(announce)for(const q of quests.list)if(q&&!q.cleared&&q.done>0)partial+=Math.round(q.reward*q.done/q.qty);
+  if(partial>0)player.money+=partial;
+  if(announce)toast(partial>0?'依頼が入れ替わりました(納品済みの分の報酬 ¥'+partial.toLocaleString('ja-JP')+')':'依頼が入れ替わりました');
+  const pool=questCandidates();
+  for(let i=pool.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+  quests.list=[];
+  for(let i=0;i<QUEST.SLOTS;i++)quests.list.push(pool[i]?makeQuest(pool[i]):null);
+  quests.timer=QUEST.PERIOD;
+}
+function questTick(){if(--quests.timer<=0)refillQuests(true);}
+function questNeed(t){let n=0;for(const q of quests.list)if(q&&!q.cleared&&q.item===t)n+=q.qty-q.done;return n;}
+function questDeliver(t,n){      // 納品できた個数を返す。達成した依頼は報酬を即支払い、その枠は入れ替えまで空く
+  let left=n;
+  for(const q of quests.list){
+    if(!q||q.cleared||q.item!==t)continue;
+    const a=Math.min(left,q.qty-q.done);q.done+=a;left-=a;
+    if(q.done>=q.qty){q.cleared=true;player.money+=q.reward;toast('依頼達成! '+ITEM_NAME[t]+'×'+q.qty+'  報酬 ¥'+q.reward.toLocaleString('ja-JP'));}
+    if(!left)break;
+  }
+  return n-left;
+}
+function questDeliverFromInv(qi){
+  const q=quests.list[qi];if(!q||q.cleared)return;
+  const have=invCount(player.slots,q.item);
+  if(!have){toast('持ち物に'+ITEM_NAME[q.item]+'がありません');return;}
+  const take=Math.min(have,q.qty-q.done);invTake(player.slots,q.item,take);questDeliver(q.item,take);
+}
+function questDeliverSlot(i){
+  const sl=player.slots[i];if(!sl||!sl.t)return;
+  const need=questNeed(sl.t);
+  if(!need){toast('この製品の依頼はありません');return;}
+  const t=sl.t,q=Math.min(sl.n,need);sl.n-=q;if(!sl.n)sl.t=null;questDeliver(t,q);
+}
+function stageTabs(){
+  const open=quests.list.filter(q=>q&&!q.cleared).length,qt=sheet&&sheet.tab==='quest';
+  return `<div class="grp2" style="margin-bottom:6px"><button class="btn${qt?'':' on'}" data-act="tab" data-tab="stage">建設</button><button class="btn${qt?' on':''}" data-act="tab" data-tab="quest">依頼(${open})</button></div>`;
+}
+function questHTML(){
+  const t=quests.timer,mm=Math.floor(t/60),ss=String(t%60).padStart(2,'0');
+  let h=`<p class="hint">次の入れ替えまで ${mm}:${ss}。入れ替えのたびに${QUEST.SLOTS}件が新しくなります(達成した枠は、入れ替えまで空きます)。</p>`;
+  quests.list.forEach((q,i)=>{
+    if(!q){h+='<div class="set"><div class="t"><b>—</b><span>この枠には、いま出せる依頼がありません</span></div></div>';return;}
+    if(q.cleared){h+=`<div class="set" style="opacity:.55"><div class="t"><div class="name">${icon(q.item)}<b>${ITEM_NAME[q.item]} ×${q.qty}</b></div><span>達成済み(報酬 ¥${q.reward.toLocaleString('ja-JP')})。次の入れ替えで補充されます</span></div></div>`;return;}
+    const have=invCount(player.slots,q.item);
+    h+=`<div class="set"><div class="t"><div class="name">${icon(q.item)}<b>${ITEM_NAME[q.item]} ×${q.qty}</b></div><span>報酬 ¥${q.reward.toLocaleString('ja-JP')}(利益 +${q.margin}%)｜納品 ${q.done} / ${q.qty}</span><div class="bar"><i style="width:${(q.done/q.qty*100).toFixed(0)}%"></i></div></div><button class="btn ok${have?'':' bad'}" data-act="qdeliver" data-i="${i}">納品<br>持ち物 ${have}</button></div>`;
+  });
+  return h+'<p class="hint">解放されたレシピで作れる製品の依頼です(購入済みかどうかは問いません)。下の持ち物をタップするか「納品」で渡せます。コンベアで建設現場へ運んでも納品されます(建設の納品物が先)。</p><h3>持ち物</h3>'+slotsHTML(player.slots,'p');
 }
 // ---- 城の絵(段階が進むごとに育つ) 100x80 座標 ----
 const CASTLE=[
@@ -372,6 +501,7 @@ function validateDefs(){
     }
     if(st(r)<need)e.push(id+': 解放段階が材料・出力素材より早く設定されています');
     if(!(r.every>0)||!(r.yield>=1))e.push(id+': every/yield が不正');
+    if(!isFinite(UNIT_COST[r.out])||UNIT_COST[r.out]<=0)e.push(id+': 原価を計算できません');
     if(ITEMS[r.out]&&ITEMS[r.out].stack<CFG.MACHINE_OUT_CAP)e.push(id+': 生産品 '+r.out+' のスタック数が出力上限('+CFG.MACHINE_OUT_CAP+')より小さい');
   }
   for(const id in MACHINES){
@@ -567,7 +697,7 @@ function newMachineState(kind){
   if(def.type==='site')return {};
   if(def.type==='buyer')return {item:'log',cd:0,out:mkInv(CFG.MACHINE_SLOTS)};
   return {
-    recipe:def.recipes[0],
+    recipe:firstOwnedRecipe(def),
     ins:Array.from({length:def.ports},()=>mkInv(CFG.MACHINE_SLOTS)),   // 製作系機械の内部ストレージは必ず1マス
     out:mkInv(CFG.MACHINE_SLOTS),
     fuel:def.fuel?mkInv(CFG.MACHINE_SLOTS):null
@@ -595,7 +725,21 @@ function addBld(kind,x,y){
   bldList.push(b);
   return b;
 }
+// 撤去で持ち物へ戻るもの(返却材料と中身)が、すべて入るか。入らないときは撤去しない(何も失わない)
+function canTakeBack(ret){
+  const sim=player.slots.map(s=>({t:s.t,n:s.n}));
+  for(const t in ret)if(invAdd(sim,t,ret[t])>0)return false;
+  return true;
+}
+function refuseRemoval(ret){
+  const txt=Object.keys(ret).map(t=>ITEM_NAME[t]+ret[t]).join('、');
+  toast('持ち物の空きが足りないため撤去できません(戻るもの: '+txt+')');
+}
 function removeBld(b){
+  const ret={};
+  if(!DEV())for(const t in BCOST[b.kind])ret[t]=(ret[t]||0)+BCOST[b.kind][t];
+  for(const inv of allInvs(b))for(const sl of inv)if(sl.t)ret[sl.t]=(ret[sl.t]||0)+sl.n;
+  if(!canTakeBack(ret)){refuseRemoval(ret);return false;}
   for(let dy=0;dy<b.h;dy++)for(let dx=0;dx<b.w;dx++)bld[(b.y+dy)*W+b.x+dx]=null;
   const i=bldList.indexOf(b);if(i>=0)bldList.splice(i,1);
   if(!DEV())refundCost(BCOST[b.kind]);
@@ -617,10 +761,10 @@ function portFor(b,t){
   return null;
 }
 function accepts(b,t){
-  if(b.kind==='site')return stageNeed(t)>0;       // 建設現場: 今の段階で必要な分だけ受け取る
+  if(b.kind==='site')return stageNeed(t)>0||questNeed(t)>0;       // 建設現場: 今の段階で必要な分だけ受け取る
   const p=portFor(b,t);return !!p&&invRoom(p,t)>0;
 }
-function receive(b,t){if(b.kind==='site'){deliver(t,1);return;}invAdd(portFor(b,t),t,1);}
+function receive(b,t){if(b.kind==='site'){if(stageNeed(t)>0)deliver(t,1);else questDeliver(t,1);return;}invAdd(portFor(b,t),t,1);}
 // 建物の出力先になれるのは、建物から外向きに伸びるコンベア(建物の辺に接して、先頭が建物と反対向き)だけ。
 // 横を通り抜けるだけのコンベアや、建物へ向かうコンベアには出力しない
 function outwardOK(c,nb){
@@ -687,7 +831,7 @@ function progOf(b){
 function setBuyerItem(b,k){if(!BUY[k]||!isUnlocked(ITEMS[k]))return;b.item=k;b.cd=0;}
 function changeRecipe(b,rid){
   const def=MACHINES[b.kind],o=RECIPES[b.recipe],n=RECIPES[rid];
-  if(def.type!=='machine'||!n||!def.recipes.includes(rid)||b.recipe===rid||!isUnlocked(n))return false;
+  if(def.type!=='machine'||!n||!def.recipes.includes(rid)||b.recipe===rid||!isUnlocked(n)||!ownedRecipe(rid))return false;
   if(b.remain>0&&o.yield>1){toast('生産中は切り替えできません(完了までお待ちください)');return false;}
   const inprog=b.remain>0,ok=Object.keys(o.in),nk=Object.keys(n.in);
   const plan=ok.map((item,i)=>({i,item,same:nk[i]===item,held:invCount(b.ins[i],item),refund:inprog?o.in[item]:0}));
@@ -710,6 +854,7 @@ function tick(){
   for(const c of convList)resolve(c);
   for(const c of convList){if(c.item&&c.item.tk!==tickNo&&c.item.age>=CFG.BELT_TICKS){c.item.fx=c.x;c.item.fy=c.y;}}
   for(const b of bldList)updateBld(b);
+  questTick();
 }
 
 /* ================= 入力状態 ================= */
@@ -722,6 +867,7 @@ const inBounds=(x,y)=>x>=0&&y>=0&&x<W&&y<H;
 
 function setTool(t){
   if(BTOOLS.includes(t)&&!isUnlocked(MACHINES[t])){toast(NAMES[t]+'は第'+MACHINES[t].stage+'段階で解放されます');return;}
+  if(BTOOLS.includes(t)&&!ownedMachine(t)){toast(NAMES[t]+'は店の「設計図」で購入してください');return;}
   tool=t;pendConv.clear();pendBld=null;
   refreshUI();
 }
@@ -729,6 +875,7 @@ function pendCost(){let n=0;for(const e of pendConv.values())if(!conv[e.y*W+e.x]
 function bldProblem(){
   const p=pendBld;if(!p)return null;
   const def=MACHINES[tool];
+  if(def.type==='machine'&&!def.recipes.some(r=>ownedRecipe(r)&&isUnlocked(RECIPES[r])))return 'この設備のレシピの設計図がありません(店→設計図)';
   for(let dy=0;dy<def.h;dy++)for(let dx=0;dx<def.w;dx++){
     const i=(p.y+dy)*W+p.x+dx,c=conv[i];
     if(!ownedAt(p.x+dx,p.y+dy))return '未購入の土地です';
@@ -785,10 +932,13 @@ function eraseAt(c,down){
   if(!c||!inBounds(c.x,c.y))return;
   const i=c.y*W+c.x,cc=conv[i],b=bld[i];
   if(cc){
-    const kind=cc.sorter?'sorter':cc.bridge?'bridge':null;
+    const kind=cc.sorter?'sorter':cc.bridge?'bridge':null,carried=(cc.bridge?cc.lanes.map(l=>l.item):[cc.item]).filter(Boolean),ret={};
+    if(!DEV()){const cost=kind?BCOST[kind]:{lumber:CFG.COST.conveyor};for(const t in cost)ret[t]=(ret[t]||0)+cost[t];}
+    for(const it of carried)ret[it.t]=(ret[it.t]||0)+1;
+    if(!canTakeBack(ret)){refuseRemoval(ret);return;}                     // 戻るものが入らないときは撤去しない
     removeConv(cc);
     if(!DEV()){if(kind)refundCost(BCOST[kind]);else invAdd(player.slots,'lumber',CFG.COST.conveyor);}
-    for(const it of (cc.bridge?cc.lanes.map(l=>l.item):[cc.item]))if(it)invAdd(player.slots,it.t,1);
+    for(const it of carried)invAdd(player.slots,it.t,1);
     refreshUI();
   }else if(b&&down){if(b.kind==='site'){toast('建設現場は撤去できません');return;}removeBld(b);refreshUI();}
 }
@@ -1371,7 +1521,7 @@ window.addEventListener('keydown',e=>{
   if(e.key==='Enter')confirmPending();
   else if(e.key==='Escape'){cancelPending();closeSheet();}
   else if(e.key==='r'||e.key==='R')rotateDef();
-  else if(e.key.length===1&&e.key>='1'&&e.key<='9'){const kt=['pan','conv',...BTOOLS.filter(k=>isUnlocked(MACHINES[k])),'erase'][+e.key-1];if(kt)setTool(kt);}
+  else if(e.key.length===1&&e.key>='1'&&e.key<='9'){const kt=['pan','conv',...BTOOLS.filter(k=>isUnlocked(MACHINES[k])&&ownedMachine(k)),'erase'][+e.key-1];if(kt)setTool(kt);}
 });
 
 /* ================= UI ================= */
@@ -1410,10 +1560,11 @@ function icon(t){
    :`<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="${(ITEMS[t]&&ITEMS[t].color)||'#888'}" stroke="#14171b" stroke-width="1.6"/></svg>`;
 }
 // 設置メニューの説明文: 機械は「解放済みのレシピ」だけから作る(先のレシピや素材を見せない)
-function machineDesc(k){
+const esc2=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function machineDesc(k,all){      // all=true: 解放済みのレシピすべて(設計図の一覧用) / 既定: 購入済みのレシピだけ
   const m=MACHINES[k];
   if(m.type!=='machine')return m.desc;
-  const rs=m.recipes.filter(r=>isUnlocked(RECIPES[r])),g={};
+  const rs=m.recipes.filter(r=>isUnlocked(RECIPES[r])&&(all||ownedRecipe(r))),g={};
   for(const r of rs){const R=RECIPES[r],key=Object.keys(R.in).map(i=>ITEM_NAME[i]).join('＋');(g[key]=g[key]||[]).push(ITEM_NAME[R.out]);}
   const txt=Object.keys(g).map(key=>key+'を'+g[key].join('・')+'に').join('、');
   return txt+'加工'+(m.fuel?'(燃料の'+ITEM_NAME[m.fuel]+'が必要)':'')+(rs.length>1?'(レシピ切替可)':'');
@@ -1584,12 +1735,14 @@ function invLoad(inv,arr){
 function serialize(){
   return {
     v:SAVE_VER,tickNo,money:player.money,slots:invSer(player.slots),
+    quests:{timer:quests.timer,list:quests.list},
     conv:convList.filter(c=>!c.lane).map(c=>{const a=[c.x,c.y,c.outs,c.rr,c.item?c.item.t:null];if(c.sorter)a.push({s:1,f:c.filter,d:c.fwd});return a;}),
     bridges:bridgeList.map(b=>[b.x,b.y,b.lanes.map(l=>l.item?l.item.t:null)]),
     bld:bldList.map(b=>({k:b.kind,x:b.x,y:b.y,remain:b.remain,cd:b.cd,burn:b.burn,ej:b.ejRR,recipe:b.recipe,item:b.item,
       ins:b.ins&&b.ins.map(invSer),out:b.out&&invSer(b.out),fuel:b.fuel&&invSer(b.fuel),inv:b.inv&&invSer(b.inv)})),
     game:{stage:game.stage,delivered:game.delivered,done:game.done},
     land:{own:land.own.map((v,i)=>v?i:-1).filter(i=>i>=0),bought:land.bought},
+    lic:{m:Object.keys(own.m).filter(k=>own.m[k]),r:Object.keys(own.r).filter(k=>own.r[k])},
     cam:{x:cam.x,y:cam.y,z:cam.z}
   };
 }
@@ -1606,6 +1759,11 @@ function applyState(d){
   for(const k in (d.game.delivered||{}))if(ITEMS[k])game.delivered[k]=d.game.delivered[k]|0;
   tickNo=d.tickNo|0;
   player.money=d.money|0;invLoad(player.slots,d.slots);
+  if(d.quests&&Array.isArray(d.quests.list)){
+    quests.timer=Math.max(1,d.quests.timer|0);
+    quests.list=d.quests.list.slice(0,QUEST.SLOTS).map(q=>(q&&ITEMS[q.item]&&RECIPE_OF[q.item])?{item:q.item,qty:Math.max(1,q.qty|0),done:q.done|0,reward:q.reward|0,margin:q.margin|0,cleared:!!q.cleared}:null);
+    while(quests.list.length<QUEST.SLOTS)quests.list.push(null);
+  }else refillQuests(false);                       // 依頼情報のない旧セーブ
   for(const a of d.conv){
     if(!inBounds(a[0],a[1])||conv[a[1]*W+a[0]])continue;
     const c=(a[5]&&a[5].s)?addSorter(a[0],a[1],clamp(a[5].d|0,0,3),ITEMS[a[5].f]?a[5].f:null):addConv(a[0],a[1],(a[2]||[]).filter(x=>x>=0&&x<4));
@@ -1635,6 +1793,12 @@ function applyState(d){
       invLoad(b.out,o.out);if(b.fuel)invLoad(b.fuel,o.fuel);
     }
   }
+  if(d.lic){resetOwn();for(const k of (d.lic.m||[]))own.m[k]=true;for(const k of (d.lic.r||[]))own.r[k]=true;}
+  else{      // 設計図の情報がない旧セーブ: その時点で解放済みの設備・レシピ(と使用中のもの)は購入済みとして引き継ぐ
+    resetOwn();
+    for(const id in LICENSE.machines)if(isUnlocked(MACHINES[id]))own.m[id]=true;
+    for(const id in LICENSE.recipes)if(isUnlocked(RECIPES[id]))own.r[id]=true;
+  }
   if(d.land&&Array.isArray(d.land.own))applyLand(d.land);else migrateLand();   // 旧セーブは既存の建物のあるエリアを購入済みに
   relocateSite();
   ensureSite();
@@ -1642,9 +1806,9 @@ function applyState(d){
   clampCam();refreshUI();
 }
 function newGame(){
-  resetWorld();tickNo=0;resetLand();
+  resetWorld();tickNo=0;resetLand();resetOwn();
   game.stage=1;game.delivered={};game.done=false;
-  player.money=CFG.START_MONEY;
+  player.money=CFG.START_MONEY;refillQuests(false);
   player.slots.forEach(s=>{s.t=null;s.n=0;});
   invAdd(player.slots,'lumber',CFG.START_LUMBER);
   ensureSite();
@@ -1711,19 +1875,39 @@ function closeSheet(){sheet=null;$('sheet').hidden=true;}
 function renderSheet(){
   if(!sheet)return;
   let title='',html='';
-  if(sheet.type==='shop'){
+  if(sheet.type==='stage'&&sheet.tab==='quest'){
+    title='依頼';html=stageTabs()+questHTML();
+  }else if(sheet.type==='shop'){
     title='店';
+    const nbp=purchasableLicenses().length,tab=sheet.tab||'goods';
+    const tabs=`<div class="grp2" style="margin-bottom:6px"><button class="btn${tab==='goods'?' on':''}" data-act="tab" data-tab="goods">資材</button><button class="btn${tab==='bp'?' on':''}" data-act="tab" data-tab="bp">設計図${nbp?'('+nbp+')':''}</button></div>`;
+    if(tab==='bp'){
+      const L=purchasableLicenses();
+      const ownedN=Object.keys(LICENSE.machines).filter(id=>ownedMachine(id)).length+Object.keys(LICENSE.recipes).filter(id=>ownedRecipe(id)).length;
+      html=tabs+'<p class="hint">段階で解放された設備・レシピは、ここで購入して初めて使えます(設備は設置、レシピは製作設備での選択)。設置には別途、材料が必要です。</p>'
+        +(L.length?L.map(x=>{
+          const bad=!DEV()&&player.money<x.price,btn=`<button class="btn ok${bad?' bad':''}" data-act="buylic" data-kind="${x.kind}" data-id="${x.id}">購入 ¥${DEV()?'0':x.price.toLocaleString('ja-JP')}</button>`;
+          if(x.kind==='machines'){const m=MACHINES[x.id];
+            return `<div class="row"><div class="name" style="align-items:flex-start;gap:8px">${bicon(x.id)}<div><b>設備: ${NAMES[x.id]}(${m.w}x${m.h})</b><div class="hint">${esc2(machineDesc(x.id,true))}｜設置: ${costText(BCOST[x.id])}</div></div></div>${btn}</div>`;}
+          const R=RECIPES[x.id],mid=BTOOLS.find(k=>MACHINES[k].recipes&&MACHINES[k].recipes.includes(x.id));
+          const ins=Object.keys(R.in).map(k=>ITEM_NAME[k]+R.in[k]).join('＋');
+          return `<div class="row"><div class="name" style="align-items:flex-start;gap:8px">${icon(R.out)}<div><b>レシピ: ${ITEM_NAME[R.out]}</b><div class="hint">${esc2(NAMES[mid])}｜${esc2(ins)} → ${ITEM_NAME[R.out]}${R.yield}個(毎分${Math.round(60/R.every*10)/10}個)</div></div></div>${btn}</div>`;
+        }).join(''):'<p>いま購入できる設計図はありません。段階を進めると増えます。</p>')
+        +`<p class="hint">購入済み ${ownedN} 件</p>`;
+    }else{
     const have=invCount(player.slots,'lumber');
-    html=`${Object.keys(BUY).map(t=>isUnlocked(ITEMS[t])
+    html=tabs+`${Object.keys(BUY).map(t=>isUnlocked(ITEMS[t])
       ?`<div class="row"><div class="name">${icon(t)}<span>${ITEM_NAME[t]} ¥${BUY[t]}</span></div><div class="grp"><button class="btn" data-act="buy" data-t="${t}" data-n="1">+1</button><button class="btn" data-act="buy" data-t="${t}" data-n="5">+5</button><button class="btn" data-act="buy" data-t="${t}" data-n="10">+10</button></div></div>`
       :`<div class="row locked"><div class="name">${icon(t)}<span>${ITEM_NAME[t]} ¥${BUY[t]}</span></div><div class="hint">第${ITEMS[t].stage}段階で解放</div></div>`).join('')}
-      ${Object.keys(SELL).filter(t=>isUnlocked(ITEMS[t])).map(t=>`<div class="row"><div class="name">${icon(t)}<span>${ITEM_NAME[t]}を売る ¥${SELL[t]}</span></div><div class="grp"><button class="btn" data-act="sell" data-t="${t}" data-n="1">1個</button><button class="btn" data-act="sell" data-t="${t}" data-n="all">全部(${invCount(player.slots,t)})</button></div></div>`).join('')}
-      <p class="hint">原木・岩は1個で持ち物1マスを使います。</p>
+      ${Object.keys(SELL).filter(t=>isUnlocked(ITEMS[t])).map(t=>`<div class="row"><div class="name">${icon(t)}<span>${ITEM_NAME[t]}を売る ¥${SELL[t].toLocaleString('ja-JP')}</span></div><div class="grp"><button class="btn" data-act="sell" data-t="${t}" data-n="1">1個</button><button class="btn" data-act="sell" data-t="${t}" data-n="all">全部(${invCount(player.slots,t)})</button></div></div>`).join('')}
+      <p class="hint">原木・岩は1個で持ち物1マスを使います。売却価格は原価の5%増し(1円未満は切り上げ)です。依頼で納品すると30〜50%増しです。</p>
       <h3>持ち物</h3>${slotsHTML(player.slots,'p')}`;
+    }
   }else if(sheet.type==='build'){
     title='設置するものを選ぶ';
-    html=BTOOLS.filter(k=>isUnlocked(MACHINES[k])).map(k=>`<button class="pick${tool===k?' cur':''}" data-act="pick" data-b="${k}">${bicon(k)}<div class="pt"><b>${NAMES[k]}(${MACHINES[k].w}x${MACHINES[k].h})</b><span class="d">${machineDesc(k)}</span></div><div class="c">${DEV()?'無料':costText(BCOST[k])}</div></button>`).join('')
-      +'<p class="hint">選ぶとマップをタップして位置を決められます。</p>';
+    html=BTOOLS.filter(k=>isUnlocked(MACHINES[k])&&ownedMachine(k)).map(k=>`<button class="pick${tool===k?' cur':''}" data-act="pick" data-b="${k}">${bicon(k)}<div class="pt"><b>${NAMES[k]}(${MACHINES[k].w}x${MACHINES[k].h})</b><span class="d">${machineDesc(k)}</span></div><div class="c">${DEV()?'無料':costText(BCOST[k])}</div></button>`).join('')
+      +'<p class="hint">選ぶとマップをタップして位置を決められます。</p>'
+      +(purchasableLicenses().length?`<p class="hint">未購入の設備・レシピが${purchasableLicenses().length}個あります。店の「設計図」で購入できます。</p>`:'');
   }else if(sheet.type==='land'){
     title='土地の購入';
     const sel=sheet.pi,price=landPrice();
@@ -1753,7 +1937,7 @@ function renderSheet(){
   }else if(sheet.type==='stage'){
     const st=curStage(),n=game.stage;
     title=game.done?'城の完成':'第'+n+'段階 '+st.name;
-    html=castleSVG();
+    html=stageTabs()+castleSVG();
     if(game.done)html+='<p>城が完成しました。おめでとうございます!</p>';
     else{
       html+=`<p class="hint">${st.sub}</p>`;
@@ -1778,7 +1962,7 @@ function renderSheet(){
       const nb=bldList.filter(b=>b.kind!=='site').length,nc=convList.filter(c=>!c.lane).length+bridgeList.length;
       html+=`<h3>記録</h3><p>プレイ時間: ${hh}時間${mm}分 ／ 設備: ${nb}台 ／ コンベア: ${nc}本</p><p class="hint">このまま遊び続けることもできます。最初からやり直す場合は「セーブ」から「ニューゲーム」を選べます。</p>`;
     }
-    if(sheet.lines.length)html+='<h3>解放されたもの</h3>'+sheet.lines.map(l=>`<p>${l}</p>`).join('');
+    if(sheet.lines.length)html+='<h3>解放されたもの(設備・レシピは店の「設計図」で購入)</h3>'+sheet.lines.map(l=>`<p>${l}</p>`).join('');
     if(!sheet.last&&sheet.to){
       html+=`<h3>次の目標: 第${sheet.to.n}段階 ${sheet.to.name}</h3>`;
       html+=sheet.to.wip?'<p class="hint">この段階は準備中です。</p>':'<p class="hint">'+Object.keys(sheet.to.need).map(k=>ITEM_NAME[k]+'×'+sheet.to.need[k]).join('、')+'</p>';
@@ -1822,7 +2006,8 @@ function renderSheet(){
     }else{
       const r=RECIPES[b.recipe],keys=Object.keys(r.in);
       const per=Math.round(60/r.every*10)/10;
-      const rlist=def.recipes.filter(k=>isUnlocked(RECIPES[k])||k===b.recipe);
+      const rlist=def.recipes.filter(k=>(isUnlocked(RECIPES[k])&&ownedRecipe(k))||k===b.recipe);
+      const more=def.recipes.some(k=>isUnlocked(RECIPES[k])&&!ownedRecipe(k));
       const line=keys.map(k=>ITEM_NAME[k]+r.in[k]).join('＋')+' → '+ITEM_NAME[r.out]+r.yield+'個(毎分'+per+'個)';
       let st;
       if(b.remain>0)st=b.working?'稼働中':(invRoom(b.out,r.out)<=0?'出力が満杯です':'燃料待ち('+ITEM_NAME[def.fuel]+'を入れてください)');
@@ -1831,6 +2016,7 @@ function renderSheet(){
       if(r.burn)sub.push('燃焼 残り '+b.burn+'秒');
       if(r.yield>1)sub.push(ITEM_NAME[r.out]+' 残り '+b.remain+'個');
       html=(rlist.length>1?`<h3>レシピ</h3><div class="grp2">${rlist.map(k=>`<button class="btn${b.recipe===k?' on':''}" data-act="recipe" data-r="${k}">${icon(RECIPES[k].out)}<span>${ITEM_NAME[RECIPES[k].out]}</span></button>`).join('')}</div>`:'')
+        +(more?'<p class="hint">未購入のレシピは、店の「設計図」で購入できます。</p>':'')
         +`<p class="hint">${line}。${r.burn?'燃料: '+ITEM_NAME[def.fuel]+'1個で'+r.burn+'秒稼働。':''}${st}</p>`
         +`<div class="bar"><i style="width:${(progOf(b)*100).toFixed(0)}%"></i></div>`
         +(sub.length?`<p class="hint">${sub.join(' ／ ')}</p>`:'')
@@ -1854,7 +2040,7 @@ function slotInv(b,k){
   return null;
 }
 function slotClick(k,i){
-  if(sheet&&sheet.type==='stage'){if(k==='p')deliverFromInv(i);return;}
+  if(sheet&&sheet.type==='stage'){if(k==='p'){if(sheet.tab==='quest')questDeliverSlot(i);else deliverFromInv(i);}return;}
   const b=sheet&&sheet.b;
   if(k==='p'&&!b){toast('建物をタップして出し入れします');return;}
   const src=slotInv(b,k);if(!src)return;
@@ -1900,6 +2086,9 @@ function runSheetAction(ds){
   else if(ds.act==='filter'){if(sheet&&sheet.c)sheet.c.filter=ds.item||null;}
   else if(ds.act==='sorterrot'){if(sheet&&sheet.c)setSorterDir(sheet.c,(sheet.c.fwd+1)%4);}
   else if(ds.act==='buyland'){buyParcel(+ds.pi);}
+  else if(ds.act==='buylic'){buyLicense(ds.kind,ds.id);}
+  else if(ds.act==='tab'){if(sheet)sheet.tab=ds.tab;}
+  else if(ds.act==='qdeliver'){questDeliverFromInv(+ds.i);}
   else if(ds.pi!==undefined&&!ds.act){if(sheet&&sheet.type==='land')sheet.pi=+ds.pi;}
   else if(ds.act==='pick'){closeSheet();setTool(ds.b);toast(NAMES[ds.b]+'を選択: マップをタップして位置を決めてください');return;}
   else if(ds.act==='set')changeSetting(ds.key,ds.v);
@@ -1953,6 +2142,7 @@ function frame(now){
   requestAnimationFrame(frame);
 }
 validateDefs().forEach(e=>console.warn('[defs]',e));
+refillQuests(false);
 resize();centerCam();ensureSite();refreshUI();startupLoad();
 requestAnimationFrame(frame);
 })();
